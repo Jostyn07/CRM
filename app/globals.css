@@ -1,0 +1,381 @@
+:root {
+  /* ============================================================
+     TEMA OSCURO (por defecto — sin atributo data-theme, o
+     data-theme="dark"). El tema claro sobreescribe estas mismas
+     variables más abajo en [data-theme="light"].
+     ============================================================ */
+  --color-bg: #0b0e14;
+  --color-sidebar-bg: rgba(16, 20, 29, 0.85);
+  --color-surface: rgba(21, 25, 34, 0.78);
+  --color-surface-solid: #151922;
+  --color-card: rgba(25, 30, 41, 0.78);
+  --color-card-hover: rgba(29, 35, 48, 0.9);
+  --color-border: #2b313d;
+  --color-text: #f1f3f7;
+  --color-text-muted: #a3aab6;
+  --color-text-tertiary: #737b88;
+
+  --color-primary: #6366f1;
+  --color-primary-hover: #5457e5;
+  --color-primary-soft: rgba(99, 102, 241, 0.14);
+
+  --color-danger: #f87171;
+  --color-whatsapp: #22c55e;
+  --color-whatsapp-bg: transparent;
+  --color-whatsapp-bg-hover: transparent;
+
+  --color-status-default: #fbbf24;   /* "Sin contactar" (is_default_stage) */
+  --color-status-protected: #60a5fa; /* "Contactado" (is_protected) */
+  --color-status-custom: #4ade80;    /* embudos personalizados */
+  --color-status-none: #737b88;      /* sin embudo asignado */
+
+  /* Cápsula de estado con 3 capas (texto/fondo/borde) — antes se
+     armaba el fondo concatenando "var(...)1f" en JS, que es CSS
+     inválido y no pintaba nada. Ahora cada estado trae su propio
+     trío de variables, ya resuelto por tema. */
+  --color-status-default-text: #fbbf24;
+  --color-status-default-bg: rgba(251, 191, 36, 0.16);
+  --color-status-default-border: rgba(251, 191, 36, 0.4);
+
+  --color-status-protected-text: #60a5fa;
+  --color-status-protected-bg: rgba(96, 165, 250, 0.16);
+  --color-status-protected-border: rgba(96, 165, 250, 0.4);
+
+  --color-status-custom-text: #4ade80;
+  --color-status-custom-bg: rgba(74, 222, 128, 0.16);
+  --color-status-custom-border: rgba(74, 222, 128, 0.4);
+
+  --color-status-none-text: #a3aab6;
+  --color-status-none-bg: rgba(163, 170, 182, 0.14);
+  --color-status-none-border: rgba(163, 170, 182, 0.3);
+
+  /* Reservado para un futuro estado "Error / perdido" (no existe aún
+     en el esquema de embudos, solo se define por si se agrega). */
+  --color-status-error-text: #f87171;
+  --color-status-error-bg: rgba(248, 113, 113, 0.16);
+  --color-status-error-border: rgba(248, 113, 113, 0.4);
+
+  /* Superficies interactivas que antes eran rgba(255,255,255,X) fijos
+     — ahora son variables para poder invertirlas en tema claro */
+  --color-input-bg: rgba(255, 255, 255, 0.05);
+  --color-btn-secondary-bg: rgba(255, 255, 255, 0.06);
+  --color-btn-secondary-bg-hover: rgba(255, 255, 255, 0.1);
+  --color-lead-hover-border: rgba(255, 255, 255, 0.16);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-focus-border: var(--color-primary);
+  --color-focus-shadow: rgba(99, 102, 241, 0.35);
+  --color-active-bg: rgba(99, 102, 241, 0.18);
+  --color-active-text: #8b8df7;
+
+  /* Fondo con imagen (BackgroundPicker) */
+  --bg-layer-filter: blur(24px) brightness(0.35) saturate(0.9);
+  --bg-overlay-start: rgba(11, 14, 20, 0.72);
+  --bg-overlay-end: rgba(11, 14, 20, 0.94);
+
+  --radius: 10px;
+  --sidebar-width: 220px;
+  --font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ============================================================
+   TEMA CLARO — activado con <html data-theme="light">
+   Paleta según el documento de diseño (fondo #F6F7FB, sidebar
+   blanco, identidad morada #6366F1 sin cambios).
+   ============================================================ */
+[data-theme="light"] {
+  --color-bg: #f6f7fb;
+  --color-sidebar-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-solid: #ffffff;
+  --color-card: #ffffff;
+  --color-card-hover: #fafaff;
+  --color-border: #e5e7eb;
+  --color-text: #111827;
+  --color-text-muted: #4b5563;
+  --color-text-tertiary: #6b7280;
+
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-primary-soft: #eef2ff;
+
+  --color-danger: #dc2626;
+  --color-whatsapp: #16a34a;
+  --color-whatsapp-bg: #f0fdf4;
+  --color-whatsapp-bg-hover: #dcfce7;
+
+  --color-status-default: #b45309;
+  --color-status-protected: #1d4ed8;
+  --color-status-custom: #15803d;
+  --color-status-none: #6b7280;
+
+  --color-status-default-text: #b45309;
+  --color-status-default-bg: #fef3c7;
+  --color-status-default-border: #fde68a;
+
+  --color-status-protected-text: #1d4ed8;
+  --color-status-protected-bg: #dbeafe;
+  --color-status-protected-border: #bfdbfe;
+
+  --color-status-custom-text: #15803d;
+  --color-status-custom-bg: #dcfce7;
+  --color-status-custom-border: #bbf7d0;
+
+  --color-status-none-text: #6b7280;
+  --color-status-none-bg: #f3f4f6;
+  --color-status-none-border: #e5e7eb;
+
+  --color-status-error-text: #b91c1c;
+  --color-status-error-bg: #fee2e2;
+  --color-status-error-border: #fecaca;
+
+  --color-input-bg: #ffffff;
+  --color-btn-secondary-bg: #ffffff;
+  --color-btn-secondary-bg-hover: #f3f4f6;
+  --color-lead-hover-border: #d1d5db;
+  --color-scrollbar-thumb: rgba(17, 24, 39, 0.15);
+  --color-focus-border: #818cf8;
+  --color-focus-shadow: rgba(99, 102, 241, 0.12);
+  --color-active-bg: #eef2ff;
+  --color-active-text: #4f46e5;
+
+  /* En claro no queremos la misma intensidad de imagen de fondo:
+     imagen muy tenue + overlay casi blanco (ver punto 15 del doc) */
+  --bg-layer-filter: blur(28px) brightness(1.5) saturate(0.4) opacity(0.4);
+  --bg-overlay-start: rgba(246, 247, 251, 0.75);
+  --bg-overlay-end: rgba(246, 247, 251, 0.94);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Capa de fondo fija (imagen + blur) — ver components/ui/backgroundPicker.js */
+.bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-size: cover;
+  background-position: center;
+  filter: var(--bg-layer-filter);
+  transform: scale(1.1);
+  transition: background-image 0.3s ease, filter 0.15s ease;
+}
+
+.bg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, var(--bg-overlay-start), var(--bg-overlay-end));
+  transition: background 0.15s ease;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.btn-secondary {
+  background: var(--color-btn-secondary-bg);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.btn-secondary:hover {
+  background: var(--color-btn-secondary-bg-hover);
+}
+
+.btn-whatsapp {
+  background: var(--color-whatsapp);
+  color: #fff;
+}
+.btn-whatsapp:hover {
+  filter: brightness(1.08);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* Tarjeta de lead: variante de .card con hover sutil (transform + borde) */
+.lead-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.lead-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-lead-hover-border);
+  background: var(--color-card-hover);
+}
+.lead-card.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+/* Cápsula de estado/embudo */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:focus, select:focus {
+  outline: none;
+  border-color: var(--color-focus-border);
+  box-shadow: 0 0 0 3px var(--color-focus-shadow);
+}
+
+select {
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+select option {
+  background: var(--color-surface-solid);
+  color: var(--color-text);
+}
+
+/* Scrollbar discreto para las columnas de Embudos y Kanban */
+.scroll-x::-webkit-scrollbar,
+.scroll-y::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-x::-webkit-scrollbar-thumb,
+.scroll-y::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  border-radius: 4px;
+}
+
+/* Botón de cambio de tema (☀️ / 🌙) — ver components/ui/themeToggle.js */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-btn-secondary-bg);
+  color: var(--color-text);
+  font-size: 1rem;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.theme-toggle:hover {
+  background: var(--color-btn-secondary-bg-hover);
+  transform: scale(1.05);
+}
+
+/* Barra de progreso pequeña (minutos utilizados / asignados) — ver
+   app/settings/usuarios/page.js */
+.progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+/* Tabs (Usuarios | Plantillas de permisos | Registro de actividad) */
+.tabs-bar {
+  display: flex;
+  gap: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1.25rem;
+}
+.tab-link {
+  padding: 0.6rem 0.1rem;
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+}
+.tab-link.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 600;
+}

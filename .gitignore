@@ -1,0 +1,39 @@
+# dependencias
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# producción
+/build
+
+# archivos de entorno -- NUNCA subir tus claves/secrets reales
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor / sistema operativo
+.DS_Store
+*.pem
+.vscode/
+.idea/
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
