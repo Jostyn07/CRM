@@ -1,6 +1,6 @@
 'use client';
 // Ruta: components/ActivityTracker.jsx
-// Montar una sola vez en app/layout.js (dentro de <body>):
+// Se monta una sola vez en app/layout.js (dentro de <Suspense>):
 //   <ActivityTracker />
 // Registra automáticamente:
 //   session.start      al abrir la app en una pestaña
@@ -13,8 +13,8 @@
 //   session.end        cierra la pestaña o el navegador
 import { useEffect, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-import { initTracker, trackEvent, flushOnExit } from '@/lib/activity/tracker';
+import { supabase } from '../lib/supabase/client';
+import { initTracker, trackEvent, flushOnExit } from '../lib/activity/tracker';
 
 const IDLE_MS = 5 * 60 * 1000;
 

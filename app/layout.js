@@ -1,14 +1,18 @@
+// Ruta: app/layout.js
+import { Suspense } from 'react';
 import './globals.css';
 import Sidebar from '../components/ui/sidebar';
 import BackgroundPicker from '../components/ui/backgroundPicker';
 import AppShell from '../components/ui/appShell';
 import SubdomainGuard from '../components/ui/subdomainGuard';
 import AuthWatcher from '../components/ui/authWatcher';
+import ActivityTracker from '../components/ActivityTracker';
 import { ThemeProvider } from '../lib/theme/themeContext';
+import { SessionProvider } from '../lib/auth/sessionContext';
 
 export const metadata = {
   title: 'Plataforma de Leads',
-  description: 'Organización de leads por embudos y etapas',
+  description: 'Gestión de leads por organización y sucursal',
 };
 
 // Se ejecuta antes del primer paint (evita el "flash" de tema oscuro
@@ -35,11 +39,16 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         <ThemeProvider>
-          <AuthWatcher />
-          <SubdomainGuard />
-          <BackgroundPicker />
-          <Sidebar />
-          <AppShell>{children}</AppShell>
+          <SessionProvider>
+            <AuthWatcher />
+            <SubdomainGuard />
+            <Suspense fallback={null}>
+              <ActivityTracker />
+            </Suspense>
+            <BackgroundPicker />
+            <Sidebar />
+            <AppShell>{children}</AppShell>
+          </SessionProvider>
         </ThemeProvider>
       </body>
     </html>

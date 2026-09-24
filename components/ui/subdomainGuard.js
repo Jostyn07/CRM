@@ -1,56 +1,40 @@
 'use client';
+// Ruta: components/ui/subdomainGuard.js
+// Cada organización trabaja en su subdominio: <slug>.<NEXT_PUBLIC_ROOT_DOMAIN>
+// Sin NEXT_PUBLIC_ROOT_DOMAIN no hace nada (local y previews de Vercel).
+// El Platform Owner no tiene restricción.
 
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { supabase } from '../../lib/supabase/client';
+import { useSession } from '../../lib/auth/sessionContext';
 
-// Dominio raíz configurado (ej. "leadfactory.com"). Sin esta variable,
-// el guard no hace nada — así no interfiere en local ni en un deploy
-// de Vercel que todavía no tiene dominio propio conectado.
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
 
-function getCurrentSubdomain() {
+export function getCurrentSubdomain() {
   if (typeof window === 'undefined' || !ROOT_DOMAIN) return null;
   const host = window.location.hostname;
-  if (host === ROOT_DOMAIN || host === `www.${ROOT_DOMAIN}` || host.endsWith('.vercel.app')) {
-    return null; // dominio raíz o preview de Vercel = sin subdominio
-  }
-  if (host.endsWith(`.${ROOT_DOMAIN}`)) {
-    return host.slice(0, -(`.${ROOT_DOMAIN}`.length));
-  }
-  return null; // localhost u otro host no reconocido: no aplica el guard
+  if (host === ROOT_DOMAIN || host === `www.${ROOT_DOMAIN}` || host.endsWith('.vercel.app')) return null;
+  if (host.endsWith(`.${ROOT_DOMAIN}`)) return host.slice(0, -`.${ROOT_DOMAIN}`.length);
+  return null;
+}
+
+export function organizationUrl(slug, path = '/leads') {
+  return ROOT_DOMAIN && slug ? `https://${slug}.${ROOT_DOMAIN}${path}` : null;
 }
 
 export default function SubdomainGuard() {
   const pathname = usePathname();
+  const { loading, organization, isPlatformOwner } = useSession();
 
   useEffect(() => {
-    if (!ROOT_DOMAIN) return; // no configurado todavía, no hace nada
-    if (pathname === '/login' || pathname === '/') return; // el login maneja su propio redirect
-    checkSubdomain();
-  }, [pathname]);
+    if (!ROOT_DOMAIN || loading || isPlatformOwner || !organization?.slug) return;
+    if (pathname === '/login' || pathname === '/') return;
+    if (window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost') return;
 
-  async function checkSubdomain() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, subdomain')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile || profile.role === 'admin' || profile.role === 'owner') return; // admin/owner sin restricción
-
-    const currentSubdomain = getCurrentSubdomain();
-    if (!currentSubdomain && !profile.subdomain) return; // ninguno configurado aún, no bloquea
-
-    if (profile.subdomain && currentSubdomain !== profile.subdomain) {
-      window.location.href = `https://${profile.subdomain}.${ROOT_DOMAIN}${pathname}`;
+    if (getCurrentSubdomain() !== organization.slug) {
+      window.location.href = organizationUrl(organization.slug, pathname);
     }
-  }
+  }, [loading, organization?.slug, isPlatformOwner, pathname]);
 
   return null;
 }

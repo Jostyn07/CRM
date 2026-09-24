@@ -1,65 +1,57 @@
 'use client';
+// Ruta: components/ui/sidebar.js
+// Menú según permisos efectivos + selector de sucursal activa.
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabase/client';
 import { signOut } from '../../lib/supabase/auth';
+import { useSession } from '../../lib/auth/sessionContext';
 import ThemeToggle from './themeToggle';
 
+// show(session) decide si el enlace aparece
 const LINKS = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/leads', label: 'Leads', icon: '👥' },
-  { href: '/llamadas', label: 'Llamadas', icon: '📞' },
-  { href: '/comunicacion', label: 'Comunicación', icon: '💬' },
-  { href: '/funnels', label: 'Embudos', icon: '🔀' },
-  { href: '/imports', label: 'Importar', icon: '📥', ownerOnly: true },
+  { href: '/dashboard', label: 'Dashboard', icon: '📊', show: () => true },
+  { href: '/leads', label: 'Leads', icon: '👥', show: (s) => s.can('leads.view') },
+  { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('leads.view') },
+  { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile },
+  { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('leads.view') },
+  { href: '/imports', label: 'Importar', icon: '📥', show: (s) => s.can('leads.import') },
 ];
 
 const SETTINGS_LINKS = [
-  { href: '/settings/usuarios', label: 'Usuarios' },
-  { href: '/settings/plantillas', label: 'Plantillas' },
-  { href: '/settings/organizaciones', label: 'Organizaciones', ownerOnly: true },
-  { href: '/settings', label: 'Preferencias' },
-  { href: '/settings/integraciones', label: 'Integraciones' },
+  { href: '/settings/usuarios', label: 'Usuarios', show: (s) => s.can('users.view') },
+  { href: '/settings/actividad', label: 'Actividad', show: (s) => s.can('audit.view') },
+  { href: '/settings/plantillas', label: 'Plantillas', show: (s) => s.can('roles.manage') },
+  { href: '/settings/numeros', label: 'Números', show: (s) => s.can('settings.manage') },
+  { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('settings.manage') },
+  { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
+  { href: '/settings', label: 'Preferencias', show: () => true },
 ];
+
+const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion'];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [profile, setProfile] = useState(null);
+  const session = useSession();
+  const { user, profile, organization, branches, activeBranchId, setActiveBranchId, isPlatformOwner } = session;
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(pathname?.startsWith('/settings'));
 
   useEffect(() => {
-    if (pathname === '/login' || pathname === '/') return;
-    loadProfile();
-  }, [pathname]);
-
-  useEffect(() => {
     if (pathname?.startsWith('/settings')) setSettingsOpen(true);
   }, [pathname]);
-
-  async function loadProfile() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single();
-    setProfile({ email: user.email, fullName: data?.full_name, role: data?.role || 'user' });
-  }
 
   async function handleSignOut() {
     await signOut();
     router.push('/login');
   }
 
-  if (pathname === '/login' || pathname === '/') return null;
+  if (HIDDEN_ON.includes(pathname) || !user) return null;
 
-  const displayName = profile?.fullName || profile?.email || 'Cuenta';
-  const isAdmin = profile?.role === 'admin';
-  const isOwner = profile?.role === 'owner';
-  const canSeeSettings = isAdmin || isOwner;
+  const displayName = profile?.full_name || user.email || 'Cuenta';
+  const links = LINKS.filter((l) => l.show(session));
+  const settingsLinks = SETTINGS_LINKS.filter((l) => l.show(session));
 
   return (
     <aside
@@ -78,20 +70,50 @@ export default function Sidebar() {
         zIndex: 30,
       }}
     >
-      <div
-        style={{
-          padding: '1.1rem 1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>Leads</span>
+      <div style={{ padding: '1.1rem 1rem 0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Leads</div>
+          <div
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--color-text-muted)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {organization?.name ?? (isPlatformOwner ? 'Platform Owner' : '')}
+          </div>
+        </div>
         <ThemeToggle />
       </div>
 
+      {branches.length > 1 && (
+        <div style={{ padding: '0 0.85rem 0.6rem' }}>
+          <select
+            className="input"
+            value={activeBranchId ?? ''}
+            onChange={(e) => setActiveBranchId(e.target.value || null)}
+            aria-label="Sucursal activa"
+            style={{ fontSize: '0.82rem', height: 34 }}
+          >
+            <option value="">Todas mis sucursales</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {branches.length === 1 && (
+        <div style={{ padding: '0 1rem 0.6rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+          📍 {branches[0].name}
+        </div>
+      )}
+
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 0.6rem', overflowY: 'auto' }}>
-        {LINKS.filter((link) => (!link.adminOnly || isAdmin) && (!link.ownerOnly || isOwner)).map((link) => {
+        {links.map((link) => {
           const active = pathname?.startsWith(link.href);
           return (
             <a
@@ -117,7 +139,7 @@ export default function Sidebar() {
           );
         })}
 
-        {canSeeSettings && (
+        {settingsLinks.length > 0 && (
           <div>
             <button
               onClick={() => setSettingsOpen((v) => !v)}
@@ -144,7 +166,7 @@ export default function Sidebar() {
 
             {settingsOpen && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: '1.7rem', marginTop: 2 }}>
-                {SETTINGS_LINKS.filter((link) => !link.ownerOnly || isOwner).map((link) => {
+                {settingsLinks.map((link) => {
                   const active = pathname === link.href;
                   return (
                     <a
@@ -172,7 +194,6 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* Usuario, esquina inferior. Click → menú con opción de cerrar sesión. */}
       <div style={{ position: 'relative', padding: '0.75rem', borderTop: '1px solid var(--color-border)' }}>
         {menuOpen && (
           <div
