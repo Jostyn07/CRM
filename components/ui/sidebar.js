@@ -20,12 +20,18 @@ const LINKS = [
 
 const SETTINGS_LINKS = [
   { href: '/settings/usuarios', label: 'Usuarios', show: (s) => s.can('users.view') },
+  { href: '/settings/sucursales', label: 'Sucursales', show: (s) => s.can('branches.manage') || s.can('settings.manage') },
+  { href: '/settings/plantillas', label: 'Roles y permisos', show: (s) => s.can('roles.manage') },
+  {
+    href: '/settings/leads',
+    label: 'Leads',
+    show: (s) => ['leads.manage_statuses', 'leads.manage_sources', 'leads.manage_tags', 'leads.manage_fields'].some((p) => s.can(p)),
+  },
   { href: '/settings/actividad', label: 'Actividad', show: (s) => s.can('audit.view') },
-  { href: '/settings/plantillas', label: 'Plantillas', show: (s) => s.can('roles.manage') },
   { href: '/settings/numeros', label: 'Números', show: (s) => s.can('settings.manage') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('settings.manage') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
-  { href: '/settings', label: 'Preferencias', show: () => true },
+  { href: '/settings', label: 'Mi cuenta', show: () => true },
 ];
 
 const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/registro'];

@@ -1,160 +1,153 @@
 'use client';
+// Ruta: app/settings/actividad/page.js
+// Bitácora completa (activity_feed): cambios de datos + navegación e
+// interacción de los usuarios. El alcance lo decide audit.view.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import RequirePermission from '../../../components/ui/requirePermission';
+import { SettingsHeader, bodyRow, cell, errorText, headRow } from '../../../components/settings/settingsTabs';
 import { supabase } from '../../../lib/supabase/client';
-import DataTable from '../../../components/tables/dataTable';
+import { useLeadConfig } from '../../../lib/leads/useLeadConfig';
+import { describeEvent, fullDate } from '../../../lib/leads/format';
 
-const TABS = [
-  { href: '/settings/usuarios', label: 'Usuarios' },
-  { href: '/settings/numeros', label: 'Números' },
-  { href: '/settings/plantillas', label: 'Plantillas de permisos' },
-  { href: '/settings/organizacion', label: 'Organización' },
-  { href: '/settings/actividad', label: 'Registro de actividad' },
-];
+const PAGE_SIZE = 50;
 
-const ENTITY_LABEL = {
-  profiles: 'Usuario',
-  call_permission_templates: 'Plantilla de permisos',
-  template_permissions: 'Permiso de plantilla',
-  user_permission_overrides: 'Permiso individual',
-  funnels: 'Embudo',
-  organizations: 'Organización',
-};
-
-const ACTION_LABEL = { insert: 'Creó', update: 'Modificó', delete: 'Eliminó' };
-
-const PAGE_SIZE = 30;
-
-function formatFecha(iso) {
-  return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+export default function ActivityPage() {
+  return (
+    <RequirePermission perm="audit.view">
+      <Activity />
+    </RequirePermission>
+  );
 }
 
-export default function ActividadPage() {
-  const [logs, setLogs] = useState([]);
-  const [actorNames, setActorNames] = useState({});
+function Activity() {
+  const config = useLeadConfig();
+  const [filters, setFilters] = useState({ user: '', source: '', from: '', to: '', hideNoise: true });
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    let q = supabase.from('activity_feed').select('*', { count: 'exact' });
+    if (filters.user) q = q.eq('user_id', filters.user);
+    if (filters.source) q = q.eq('source', filters.source);
+    if (filters.from) q = q.gte('occurred_at', new Date(`${filters.from}T00:00:00`).toISOString());
+    if (filters.to) q = q.lte('occurred_at', new Date(`${filters.to}T23:59:59.999`).toISOString());
+    // Oculta los eventos de ventana (foco/desenfoque) salvo que se pidan
+    if (filters.hideNoise) q = q.not('event_type', 'in', '(window.blur,window.focus)');
+    const from = (page - 1) * PAGE_SIZE;
+    const { data, count, error: err } = await q.order('occurred_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
+    if (err) setError(await errorText(err));
+    else {
+      setRows(data ?? []);
+      setTotal(count ?? 0);
+      setError(null);
+    }
+    setLoading(false);
+  }, [filters, page]);
 
   useEffect(() => {
-    load(page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+    load();
+  }, [load]);
 
-  async function load(pageNum) {
-    setLoading(true);
-    setErrorMsg(null);
-
-    const from = (pageNum - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    const { data, error, count } = await supabase
-      .from('audit_logs')
-      .select('id, action, entity_type, entity_id, detail, created_at, actor_id', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to);
-
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setLogs(data ?? []);
-    setTotalCount(count ?? 0);
-
-    // Los nombres de quién hizo cada cosa se resuelven aparte -- audit_logs
-    // solo guarda el actor_id, no duplicamos el nombre en cada fila.
-    const actorIds = [...new Set((data ?? []).map((l) => l.actor_id).filter(Boolean))];
-    if (actorIds.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', actorIds);
-      const names = {};
-      (profiles ?? []).forEach((p) => {
-        names[p.id] = p.full_name || 'Usuario';
-      });
-      setActorNames((prev) => ({ ...prev, ...names }));
-    }
-
-    setLoading(false);
-  }
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-
-  const columns = [
-    { key: 'fecha', label: 'Fecha', render: (l) => formatFecha(l.created_at) },
-    { key: 'actor', label: 'Quién', render: (l) => actorNames[l.actor_id] || (l.actor_id ? '—' : 'Sistema') },
-    { key: 'accion', label: 'Acción', render: (l) => ACTION_LABEL[l.action] || l.action },
-    { key: 'entidad', label: 'Sobre', render: (l) => ENTITY_LABEL[l.entity_type] || l.entity_type },
-    {
-      key: 'detalle',
-      label: '',
-      render: (l) => (
-        <button
-          className="btn btn-secondary"
-          style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem' }}
-          onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
-        >
-          {expandedId === l.id ? 'Ocultar' : 'Ver detalle'}
-        </button>
-      ),
-    },
-  ];
+  const set = (k) => (e) => {
+    setPage(1);
+    setFilters((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  };
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <main style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.9rem', fontWeight: 750, letterSpacing: '-0.02em', marginBottom: 4 }}>Registro de actividad</h1>
-      <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '1.25rem' }}>
-        Quién creó, modificó o eliminó qué, dentro de tu organización.
-      </p>
+    <main style={{ padding: '1.5rem', maxWidth: 1200 }}>
+      <SettingsHeader title="Actividad" subtitle="Todo lo que hacen los usuarios: cambios de datos, páginas visitadas, cambios de pestaña, inactividad e inicios de sesión." />
 
-      <div className="tabs-bar">
-        {TABS.map((t) => (
-          <a key={t.href} href={t.href} className={`tab-link${t.href === '/settings/actividad' ? ' active' : ''}`}>
-            {t.label}
-          </a>
-        ))}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.8rem' }}>
+        <select className="input" style={{ width: 220 }} value={filters.user} onChange={set('user')}>
+          <option value="">Todos los usuarios</option>
+          {config.users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        <select className="input" style={{ width: 200 }} value={filters.source} onChange={set('source')}>
+          <option value="">Todo</option>
+          <option value="data">Solo cambios de datos</option>
+          <option value="ui">Solo navegación e interacción</option>
+        </select>
+        <input className="input" type="date" style={{ width: 160 }} value={filters.from} onChange={set('from')} aria-label="Desde" />
+        <input className="input" type="date" style={{ width: 160 }} value={filters.to} onChange={set('to')} aria-label="Hasta" />
+        <label style={{ fontSize: '0.82rem', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="checkbox" checked={filters.hideNoise} onChange={set('hideNoise')} /> Ocultar cambios de foco de ventana
+        </label>
       </div>
 
-      {errorMsg && <p style={{ color: 'var(--color-danger)', marginTop: '1rem' }}>{errorMsg}</p>}
+      {error && <p style={{ color: 'var(--color-danger)', marginBottom: '0.8rem' }}>{error}</p>}
 
-      {loading ? (
-        <p style={{ marginTop: '1rem' }}>Cargando…</p>
-      ) : (
-        <>
-          <DataTable columns={columns} rows={logs} emptyMessage="Todavía no hay actividad registrada." />
+      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <thead>
+            <tr style={headRow}>
+              <th style={cell}>Fecha</th>
+              <th style={cell}>Usuario</th>
+              <th style={cell}>Acción</th>
+              <th style={cell}>Dónde</th>
+              <th style={cell}>Tipo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr>
+                <td colSpan={5} style={{ ...cell, textAlign: 'center', padding: '1.5rem' }}>
+                  Cargando…
+                </td>
+              </tr>
+            )}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ ...cell, textAlign: 'center', padding: '1.5rem', color: 'var(--color-text-muted)' }}>
+                  No hay actividad con esos filtros.
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              rows.map((ev) => (
+                <tr key={`${ev.source}-${ev.id}`} style={bodyRow}>
+                  <td style={{ ...cell, whiteSpace: 'nowrap' }}>{fullDate(ev.occurred_at)}</td>
+                  <td style={cell}>{config.maps.user[ev.user_id]?.name ?? (ev.user_id ? 'Usuario' : 'Sistema')}</td>
+                  <td style={cell}>{describeEvent(ev, config.maps)}</td>
+                  <td style={{ ...cell, color: 'var(--color-text-muted)' }}>
+                    {ev.entity_type === 'leads' && ev.entity_id ? (
+                      <a href={`/leads/${ev.entity_id}`} style={{ color: 'var(--color-primary)' }}>
+                        Ver lead
+                      </a>
+                    ) : (
+                      ev.path || ev.entity_type || '—'
+                    )}
+                  </td>
+                  <td style={cell}>{ev.source === 'data' ? 'Datos' : 'Navegación'}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
 
-          {logs.map((l) =>
-            expandedId === l.id ? (
-              <pre
-                key={`detail-${l.id}`}
-                style={{
-                  background: 'var(--color-btn-secondary-bg)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius)',
-                  padding: '0.75rem',
-                  fontSize: '0.78rem',
-                  overflowX: 'auto',
-                  marginTop: '0.5rem',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {JSON.stringify(l.detail, null, 2)}
-              </pre>
-            ) : null
-          )}
-
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', gap: '0.35rem', marginTop: '1.25rem' }}>
-              <button className="btn btn-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: '0.4rem 0.6rem' }}>←</button>
-              <span style={{ padding: '0.4rem 0.7rem', fontSize: '0.85rem' }}>{page} / {totalPages}</span>
-              <button className="btn btn-secondary" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ padding: '0.4rem 0.6rem' }}>→</button>
-            </div>
-          )}
-        </>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', fontSize: '0.85rem' }}>
+        <span>{total.toLocaleString('es-CO')} evento(s)</span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            ← Anterior
+          </button>
+          <span>
+            Página {page} de {totalPages}
+          </span>
+          <button className="btn btn-secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            Siguiente →
+          </button>
+        </div>
+      </div>
     </main>
   );
 }
