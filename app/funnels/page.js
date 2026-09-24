@@ -1,261 +1,320 @@
 'use client';
+// Ruta: app/funnels/page.js
+// Embudos: tablero Kanban (arrastrar y soltar) y vista de tabla, con
+// totales por etapa. Mover a "Perdida" pide el motivo.
 
-import { useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import RequirePermission from '../../components/ui/requirePermission';
+import Modal from '../../components/ui/modal';
+import OpportunityForm from '../../components/opportunities/opportunityForm';
+import OpportunityDetail from '../../components/opportunities/opportunityDetail';
+import LostReasonDialog from '../../components/opportunities/lostReasonDialog';
 import { supabase } from '../../lib/supabase/client';
-import FunnelColumn from '../../components/funnels/funnelColumn';
-
-const FUNNEL_PAGE_SIZE = 50;
+import { useSession } from '../../lib/auth/sessionContext';
+import { useLeadConfig } from '../../lib/leads/useLeadConfig';
+import { funnelSummary, listOpportunities, money, moveOpportunity, useFunnelConfig } from '../../lib/opportunities/api';
+import { relTime } from '../../lib/leads/format';
+import { trackEvent, trackTab } from '../../lib/activity/tracker';
 
 export default function FunnelsPage() {
-  const [funnels, setFunnels] = useState([]);
-  // { [funnelId]: { leads: [...], total: number, loadingMore: bool } }
-  const [funnelLeads, setFunnelLeads] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null);
+  return (
+    <RequirePermission perm="opportunities.view">
+      <Suspense fallback={null}>
+        <Board />
+      </Suspense>
+    </RequirePermission>
+  );
+}
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [saving, setSaving] = useState(false);
+function Board() {
+  const params = useSearchParams();
+  const { can, scopeOf, activeBranchId } = useSession();
+  const fconfig = useFunnelConfig();
+  const lconfig = useLeadConfig();
 
-  const [editingId, setEditingId] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
+  const [funnelId, setFunnelId] = useState(params.get('funnel') || '');
+  const [view, setView] = useState('kanban');
+  const [userId, setUserId] = useState('');
+  const [search, setSearch] = useState('');
+  const [showClosed, setShowClosed] = useState(false);
+  const [opps, setOpps] = useState([]);
+  const [summary, setSummary] = useState({});
+  const [error, setError] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [dragId, setDragId] = useState(null);
+  const [pendingLost, setPendingLost] = useState(null); // { oppId, stageId }
 
   useEffect(() => {
-    loadFunnels();
-  }, []);
+    if (!funnelId && fconfig.funnels.length) setFunnelId(fconfig.funnels.find((f) => f.is_active)?.id ?? '');
+  }, [fconfig.funnels, funnelId]);
 
-  async function loadFunnels() {
-    setLoading(true);
-    setErrorMsg(null);
-
-    const { data: funnelsData, error } = await supabase
-      .from('funnels')
-      .select('id, name, description, is_protected, is_default_stage')
-      .order('is_default_stage', { ascending: false })
-      .order('is_protected', { ascending: false })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-      return;
+  const load = useCallback(async () => {
+    if (!funnelId) return;
+    try {
+      const [rows, sum] = await Promise.all([
+        listOpportunities({ funnelId, branchId: activeBranchId, userId, search, status: showClosed ? undefined : 'open' }),
+        funnelSummary(funnelId, activeBranchId, userId),
+      ]);
+      setOpps(rows);
+      setSummary(sum);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
     }
+  }, [funnelId, activeBranchId, userId, search, showClosed]);
 
-    setFunnels(funnelsData ?? []);
+  useEffect(() => {
+    const t = setTimeout(load, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [load, search]);
 
-    // Trae la primera página de leads de cada embudo, todas en paralelo.
-    const results = await Promise.all(
-      (funnelsData ?? []).map((f) => fetchFunnelLeads(f.id, 0, FUNNEL_PAGE_SIZE))
+  // Otros usuarios mueven oportunidades: el tablero se actualiza solo
+  useEffect(() => {
+    if (!funnelId) return;
+    const ch = supabase
+      .channel(`opps:${funnelId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunities', filter: `funnel_id=eq.${funnelId}` }, () => load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [funnelId, load]);
+
+  const stages = fconfig.stagesOf(funnelId).filter((s) => s.is_active && (showClosed || s.kind === 'open'));
+  const byStage = useMemo(() => {
+    const m = {};
+    for (const o of opps) (m[o.stage_id] ||= []).push(o);
+    return m;
+  }, [opps]);
+
+  const openTotals = useMemo(() => {
+    const open = fconfig.stagesOf(funnelId).filter((s) => s.kind === 'open');
+    return open.reduce(
+      (a, s) => ({ count: a.count + Number(summary[s.id]?.count ?? 0), value: a.value + Number(summary[s.id]?.total_value ?? 0), weighted: a.weighted + Number(summary[s.id]?.weighted_value ?? 0) }),
+      { count: 0, value: 0, weighted: 0 }
     );
+  }, [summary, funnelId, fconfig]);
 
-    const grouped = {};
-    (funnelsData ?? []).forEach((f, i) => {
-      grouped[f.id] = { leads: results[i].leads, total: results[i].total, loadingMore: false };
-    });
-    setFunnelLeads(grouped);
-    setLoading(false);
-  }
-
-  // Trae leads de UN embudo específico, en el rango [from, from+size).
-  async function fetchFunnelLeads(funnelId, from, size) {
-    const { data, error, count } = await supabase
-      .from('lead_funnel')
-      .select('leads!inner ( id, name, phone, status )', { count: 'exact' })
-      .eq('funnel_id', funnelId)
-      .eq('leads.status', 'active')
-      .range(from, from + size - 1);
-
-    if (error) {
-      return { leads: [], total: 0, error };
-    }
-    return { leads: (data ?? []).map((row) => row.leads), total: count ?? 0 };
-  }
-
-  async function handleLoadMore(funnelId) {
-    setFunnelLeads((prev) => ({
-      ...prev,
-      [funnelId]: { ...prev[funnelId], loadingMore: true },
-    }));
-
-    const current = funnelLeads[funnelId];
-    const result = await fetchFunnelLeads(funnelId, current.leads.length, FUNNEL_PAGE_SIZE);
-
-    setFunnelLeads((prev) => ({
-      ...prev,
-      [funnelId]: {
-        leads: [...prev[funnelId].leads, ...result.leads],
-        total: result.total,
-        loadingMore: false,
-      },
-    }));
-  }
-
-  // Refresca (desde el inicio) los leads visibles de un embudo específico
-  // — se usa tras mover un lead, sin tocar el "cargar más" de las demás
-  // columnas.
-  async function refreshFunnelColumn(funnelId) {
-    const currentlyLoaded = funnelLeads[funnelId]?.leads.length || FUNNEL_PAGE_SIZE;
-    const result = await fetchFunnelLeads(funnelId, 0, Math.max(currentlyLoaded, FUNNEL_PAGE_SIZE));
-    setFunnelLeads((prev) => ({
-      ...prev,
-      [funnelId]: { leads: result.leads, total: result.total, loadingMore: false },
-    }));
-  }
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setSaving(true);
-    setErrorMsg(null);
-
-    const { error } = await supabase
-      .from('funnels')
-      .insert({ name: newName.trim(), description: newDescription.trim() || null });
-
-    if (error) {
-      setErrorMsg(error.message);
-    } else {
-      setNewName('');
-      setNewDescription('');
-      setShowCreateForm(false);
-      await loadFunnels();
-    }
-    setSaving(false);
-  }
-
-  function startEdit(funnel) {
-    setEditingId(funnel.id);
-    setEditName(funnel.name);
-    setEditDescription(funnel.description || '');
-  }
-
-  async function handleSaveEdit(funnelId) {
-    if (!editName.trim()) return;
-    setErrorMsg(null);
-
-    const { error } = await supabase
-      .from('funnels')
-      .update({ name: editName.trim(), description: editDescription.trim() || null })
-      .eq('id', funnelId);
-
-    if (error) {
-      setErrorMsg(error.message);
-    } else {
-      setEditingId(null);
-      await loadFunnels();
+  async function drop(stageId, lost = null) {
+    const opp = opps.find((o) => o.id === dragId || o.id === pendingLost?.oppId);
+    setDragId(null);
+    if (!opp || opp.stage_id === stageId) return;
+    const stage = fconfig.stageMap[stageId];
+    if (stage.kind === 'lost' && !lost) return setPendingLost({ oppId: opp.id, stageId });
+    // Movimiento optimista
+    setOpps((list) => list.map((o) => (o.id === opp.id ? { ...o, stage_id: stageId } : o)));
+    try {
+      await moveOpportunity(opp.id, stageId, lost);
+      trackEvent('opportunity.moved', { entityType: 'opportunities', entityId: opp.id, metadata: { to: stage.name, via: 'kanban' } });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPendingLost(null);
+      load();
     }
   }
 
-  async function handleDelete(funnel) {
-    const count = funnelLeads[funnel.id]?.total ?? 0;
-    const confirmed = window.confirm(
-      `¿Eliminar el embudo "${funnel.name}"? Los ${count} leads asignados quedarán sin embudo. Esta acción no se puede deshacer.`
-    );
-    if (!confirmed) return;
+  const users = lconfig.users;
+  const userName = (id) => users.find((u) => u.id === id)?.name;
+  const currency = fconfig.currency;
 
-    setErrorMsg(null);
-    const { error } = await supabase.from('funnels').delete().eq('id', funnel.id);
-    if (error) {
-      setErrorMsg(error.message);
-    } else {
-      await loadFunnels();
-    }
-  }
-
-  // Arrastrar un lead de una columna a otra: mueve su embudo directamente
-  // (los embudos son el único nivel de estado, no hay etapas). Refresca
-  // solo las dos columnas afectadas.
-  async function handleDropLead(leadId, newFunnelId) {
-    // Encuentra en qué columna está ahora mismo (para saber cuál refrescar).
-    const sourceFunnelId = Object.keys(funnelLeads).find((fid) =>
-      funnelLeads[fid].leads.some((l) => l.id === leadId)
-    );
-
-    const { error } = await supabase
-      .from('lead_funnel')
-      .upsert({ lead_id: leadId, funnel_id: newFunnelId }, { onConflict: 'lead_id' });
-
-    if (error) {
-      setErrorMsg(error.message);
-      return;
-    }
-
-    if (sourceFunnelId && sourceFunnelId !== newFunnelId) {
-      await refreshFunnelColumn(sourceFunnelId);
-    }
-    await refreshFunnelColumn(newFunnelId);
-  }
+  if (fconfig.loading) return <main style={{ padding: '1.5rem' }}>Cargando…</main>;
 
   return (
     <main style={{ padding: '1.5rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ fontSize: '1.25rem' }}>Embudos</h1>
-        <button className="btn btn-primary" onClick={() => setShowCreateForm((v) => !v)}>
-          {showCreateForm ? 'Cancelar' : '+ Crear embudo'}
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Embudos</h1>
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+            {openTotals.count} abierta(s) · {money(openTotals.value, currency)} en juego · {money(openTotals.weighted, currency)} ponderado
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {can('funnels.manage') && (
+            <a className="btn btn-secondary" href="/settings/embudos">
+              ⚙️ Configurar
+            </a>
+          )}
+          {can('opportunities.create') && (
+            <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+              + Nueva oportunidad
+            </button>
+          )}
+        </div>
       </div>
 
-      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-        Arrastra un lead entre columnas para cambiarlo de embudo.
-      </p>
-
-      {errorMsg && (
-        <p style={{ color: 'var(--color-danger)', marginBottom: '1rem' }}>{errorMsg}</p>
-      )}
-
-      {showCreateForm && (
-        <form onSubmit={handleCreate} className="card" style={{ marginBottom: '1rem', maxWidth: 360 }}>
-          <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-            <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Nombre</span>
-            <input
-              className="input"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              required
-              autoFocus
-            />
-          </label>
-          <label style={{ display: 'block', marginBottom: '1rem' }}>
-            <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Descripción (opcional)</span>
-            <input
-              className="input"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-            />
-          </label>
-          <button className="btn btn-primary" type="submit" disabled={saving}>
-            {saving ? 'Creando…' : 'Crear'}
-          </button>
-        </form>
-      )}
-
-      {loading ? (
-        <p>Cargando…</p>
-      ) : funnels.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Aún no hay embudos creados.</p>
-      ) : (
-        <div className="scroll-x" style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-          {funnels.map((funnel) => (
-            <FunnelColumn
-              key={funnel.id}
-              funnel={funnel}
-              leads={funnelLeads[funnel.id]?.leads ?? []}
-              total={funnelLeads[funnel.id]?.total ?? 0}
-              loadingMore={funnelLeads[funnel.id]?.loadingMore ?? false}
-              onLoadMore={() => handleLoadMore(funnel.id)}
-              editing={editingId === funnel.id}
-              editState={{ name: editName, setName: setEditName, description: editDescription, setDescription: setEditDescription }}
-              onStartEdit={() => startEdit(funnel)}
-              onCancelEdit={() => setEditingId(null)}
-              onSaveEdit={() => handleSaveEdit(funnel.id)}
-              onDelete={() => handleDelete(funnel)}
-              onDropLead={handleDropLead}
-            />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
+        <select className="input" style={{ width: 200 }} value={funnelId} onChange={(e) => setFunnelId(e.target.value)} aria-label="Embudo">
+          {fconfig.funnels
+            .filter((f) => f.is_active)
+            .map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+        </select>
+        <input className="input" style={{ width: 220 }} placeholder="Buscar por título…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {scopeOf('opportunities.view') !== 'own' && (
+          <select className="input" style={{ width: 200 }} value={userId} onChange={(e) => setUserId(e.target.value)}>
+            <option value="">Todos los responsables</option>
+            <option value="__none">Sin asignar</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <label style={{ fontSize: '0.84rem', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> Mostrar ganadas y perdidas
+        </label>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          {['kanban', 'tabla'].map((v) => (
+            <button
+              key={v}
+              className={view === v ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={() => {
+                trackTab('funnels', view, v);
+                setView(v);
+              }}
+            >
+              {v === 'kanban' ? 'Kanban' : 'Tabla'}
+            </button>
           ))}
         </div>
+      </div>
+
+      {error && <p style={{ color: 'var(--color-danger)', marginBottom: 8 }}>{error}</p>}
+
+      {view === 'kanban' ? (
+        <div className="scroll-x" style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12, alignItems: 'flex-start' }}>
+          {stages.map((s) => {
+            const items = byStage[s.id] ?? [];
+            const sum = summary[s.id];
+            return (
+              <div
+                key={s.id}
+                onDragOver={(e) => can('opportunities.update') && e.preventDefault()}
+                onDrop={() => drop(s.id)}
+                style={{ minWidth: 270, width: 270, flexShrink: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', borderTop: `3px solid ${s.color}` }}
+              >
+                <div style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid var(--color-border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '0.9rem' }}>
+                    <span>{s.name}</span>
+                    <span style={{ color: 'var(--color-text-muted)' }}>{sum?.count ?? 0}</span>
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>
+                    {money(sum?.total_value ?? 0, currency)}
+                    {s.kind === 'open' ? ` · ${s.probability}%` : ''}
+                  </div>
+                </div>
+                <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 80, maxHeight: '65vh', overflowY: 'auto' }}>
+                  {items.map((o) => (
+                    <div
+                      key={o.id}
+                      draggable={can('opportunities.update')}
+                      onDragStart={() => setDragId(o.id)}
+                      onClick={() => setSelected(o)}
+                      className="card"
+                      style={{ padding: '0.6rem 0.7rem', cursor: 'pointer', opacity: dragId === o.id ? 0.5 : 1 }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '0.87rem' }}>{o.title}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                        {o.lead?.first_name} {o.lead?.last_name}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: '0.78rem' }}>
+                        <strong>{money(o.value, o.currency)}</strong>
+                        <span style={{ color: 'var(--color-text-muted)' }}>{userName(o.assigned_user_id) ?? 'Sin asignar'}</span>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                        En esta etapa {relTime(o.stage_entered_at)}
+                        {o.expected_close_date ? ` · cierre ${o.expected_close_date}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)', fontSize: '0.78rem' }}>
+                {['Oportunidad', 'Lead', 'Etapa', 'Valor', 'Responsable', 'Cierre estimado', 'En la etapa'].map((h) => (
+                  <th key={h} style={{ padding: '0.55rem 0.75rem' }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {opps.filter((o) => showClosed || o.status === 'open').length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                    No hay oportunidades.
+                  </td>
+                </tr>
+              )}
+              {opps
+                .filter((o) => showClosed || o.status === 'open')
+                .map((o) => (
+                  <tr key={o.id} onClick={() => setSelected(o)} style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}>
+                    <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600 }}>{o.title}</td>
+                    <td style={{ padding: '0.55rem 0.75rem' }}>
+                      {o.lead?.first_name} {o.lead?.last_name}
+                    </td>
+                    <td style={{ padding: '0.55rem 0.75rem' }}>
+                      <span style={{ borderLeft: `4px solid ${fconfig.stageMap[o.stage_id]?.color}`, paddingLeft: 6 }}>{fconfig.stageMap[o.stage_id]?.name}</span>
+                    </td>
+                    <td style={{ padding: '0.55rem 0.75rem' }}>{money(o.value, o.currency)}</td>
+                    <td style={{ padding: '0.55rem 0.75rem' }}>{userName(o.assigned_user_id) ?? '—'}</td>
+                    <td style={{ padding: '0.55rem 0.75rem' }}>{o.expected_close_date ?? '—'}</td>
+                    <td style={{ padding: '0.55rem 0.75rem' }}>{relTime(o.stage_entered_at)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Nueva oportunidad" width={560}>
+        <OpportunityForm
+          funnelId={funnelId}
+          fconfig={fconfig}
+          users={users}
+          onCancel={() => setCreateOpen(false)}
+          onSaved={() => {
+            setCreateOpen(false);
+            load();
+          }}
+        />
+      </Modal>
+
+      <Modal open={!!selected} onClose={() => setSelected(null)} title={selected?.title} width={600}>
+        {selected && (
+          <OpportunityDetail
+            opportunity={opps.find((o) => o.id === selected.id) ?? selected}
+            fconfig={fconfig}
+            users={users}
+            onChanged={load}
+            onClose={() => setSelected(null)}
+          />
+        )}
+      </Modal>
+
+      <LostReasonDialog
+        open={!!pendingLost}
+        reasons={fconfig.lostReasons}
+        onCancel={() => setPendingLost(null)}
+        onConfirm={(lost) => {
+          setDragId(pendingLost.oppId);
+          drop(pendingLost.stageId, lost);
+        }}
+      />
     </main>
   );
 }

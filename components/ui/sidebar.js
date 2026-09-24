@@ -12,9 +12,9 @@ import ThemeToggle from './themeToggle';
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊', show: () => true },
   { href: '/leads', label: 'Leads', icon: '👥', show: (s) => s.can('leads.view') },
-  { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('leads.view') },
+  { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('calls.view') || s.can('calls.make') },
   { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile },
-  { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('leads.view') },
+  { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('opportunities.view') },
   { href: '/imports', label: 'Importar', icon: '📥', show: (s) => s.can('leads.import') },
 ];
 
@@ -27,8 +27,10 @@ const SETTINGS_LINKS = [
     label: 'Leads',
     show: (s) => ['leads.manage_statuses', 'leads.manage_sources', 'leads.manage_tags', 'leads.manage_fields'].some((p) => s.can(p)),
   },
+  { href: '/settings/embudos', label: 'Embudos', show: (s) => s.can('funnels.manage') },
   { href: '/settings/actividad', label: 'Actividad', show: (s) => s.can('audit.view') },
-  { href: '/settings/numeros', label: 'Números', show: (s) => s.can('settings.manage') },
+  { href: '/settings/numeros', label: 'Números', show: (s) => s.isPlatformOwner || s.can('calls.manage_numbers') },
+  { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('settings.manage') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
   { href: '/settings', label: 'Mi cuenta', show: () => true },

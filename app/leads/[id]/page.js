@@ -15,6 +15,7 @@ import { getLead, getLeadActivity, restore, softDelete } from '../../../lib/lead
 import { describeEvent, fullDate, relTime } from '../../../lib/leads/format';
 import { trackEvent, trackTab } from '../../../lib/activity/tracker';
 import LeadCallsTab from '../../../components/calls/leadCallsTab';
+import LeadOpportunityTab from '../../../components/opportunities/leadOpportunityTab';
 import { useCalls } from '../../../lib/calls/callContext';
 
 const TABS = [
@@ -198,7 +199,7 @@ function LeadDetail() {
       {tab === 'llamadas' && <LeadCallsTab lead={lead} users={maps.user} />}
       {tab === 'whatsapp' && <Upcoming text="Las conversaciones de WhatsApp llegan en la Fase 4 (Comunicación)." />}
       {tab === 'tareas' && <Upcoming text="Las tareas llegan en la Fase 3 (Actividades y tareas)." />}
-      {tab === 'oportunidad' && <Upcoming text="Las oportunidades llegan en la Fase 2 (Embudos)." />}
+      {tab === 'oportunidad' && <LeadOpportunityTab lead={lead} users={config.users} onLeadChanged={load} />}
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Editar lead" width={720}>
         <LeadForm

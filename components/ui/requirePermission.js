@@ -7,12 +7,13 @@
 //   <RequirePermission any={['users.view', 'roles.manage']}> … </RequirePermission>
 //   <RequirePermission perm="leads.assign" scope="organization"> … </RequirePermission>
 //   <RequirePermission platformOwner> … </RequirePermission>
+//   <RequirePermission perm="calls.manage_numbers" allowPlatformOwner> … </RequirePermission>
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '../../lib/auth/sessionContext';
 
-export default function RequirePermission({ perm, any, scope, platformOwner, children }) {
+export default function RequirePermission({ perm, any, scope, platformOwner, allowPlatformOwner, children }) {
   const router = useRouter();
   const { loading, user, can, isPlatformOwner } = useSession();
 
@@ -22,6 +23,7 @@ export default function RequirePermission({ perm, any, scope, platformOwner, chi
     else if (perm) allowed = can(perm, scope);
     else if (any) allowed = any.some((p) => can(p, scope));
     else allowed = true;
+    if (allowPlatformOwner && isPlatformOwner) allowed = true;
   }
 
   useEffect(() => {
