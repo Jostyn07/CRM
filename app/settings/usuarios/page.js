@@ -1,1066 +1,497 @@
 'use client';
+// Ruta: app/settings/usuarios/page.js
+// Usuarios de la organización: lista, invitación (Edge Function
+// invite-user), estado, rol, sucursales, permisos individuales y
+// enlace para restablecer contraseña. Todo lo valida la base de datos.
 
-import { useEffect, useState } from 'react';
-import { supabase } from '../../../lib/supabase/client';
-import { getInitials, getAvatarColors } from '../../../components/leads/avatarColor';
-import Button from '../../../components/ui/button';
-import Input from '../../../components/ui/input';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import RequirePermission from '../../../components/ui/requirePermission';
 import Modal from '../../../components/ui/modal';
-import CardMenu from '../../../components/ui/cardMenu';
-import DataTable from '../../../components/tables/dataTable';
+import { SettingsHeader, bodyRow, cell, errorText, headRow } from '../../../components/settings/settingsTabs';
+import { supabase } from '../../../lib/supabase/client';
+import { useSession } from '../../../lib/auth/sessionContext';
+import { trackEvent } from '../../../lib/activity/tracker';
 
-const TABS = [
-  { href: '/settings/usuarios', label: 'Usuarios' },
-  { href: '/settings/numeros', label: 'Números' },
-  { href: '/settings/plantillas', label: 'Plantillas de permisos' },
-  { href: '/settings/organizacion', label: 'Organización' },
-  { href: '/settings/actividad', label: 'Registro de actividad' },
-];
+const STATUS = {
+  active: { label: 'Activo', color: '#22c55e' },
+  invited: { label: 'Invitado', color: '#f59e0b' },
+  inactive: { label: 'Inactivo', color: '#9ca3af' },
+  suspended: { label: 'Suspendido', color: '#ef4444' },
+};
+const SCOPE_LABEL = { own: 'Propio', branch: 'Sucursal', organization: 'Organización' };
 
-const PAGE_SIZE_OPTIONS = [10, 20, 40];
-
-function minutos(segundos) {
-  return Math.round((segundos || 0) / 60);
+export default function UsersPage() {
+  return (
+    <RequirePermission perm="users.view">
+      <Users />
+    </RequirePermission>
+  );
 }
 
-function rolLabel(role) {
-  if (role === 'admin') return 'Administrador';
-  if (role === 'owner') return 'Dueño';
-  return 'Agente';
+async function loadAll() {
+  const [p, ub, ur, r, b, perms, up] = await Promise.all([
+    supabase.from('profiles').select('id, full_name, email, phone, status, created_at').order('full_name'),
+    supabase.from('user_branches').select('user_id, branch_id, is_primary'),
+    supabase.from('user_roles').select('user_id, role_id'),
+    supabase.from('roles').select('id, key, name, is_system').order('name'),
+    supabase.from('branches').select('id, name, status').order('name'),
+    supabase.from('permissions').select('key, module, description').order('key'),
+    supabase.from('user_permissions').select('user_id, permission_key, effect, scope'),
+  ]);
+  const err = [p, ub, ur, r, b, perms].find((x) => x.error)?.error;
+  if (err) throw err;
+
+  const byUser = (rows, key = 'user_id') => rows.reduce((acc, x) => ((acc[x[key]] ||= []).push(x), acc), {});
+  const branchesOf = byUser(ub.data);
+  const rolesOf = byUser(ur.data);
+  const overridesOf = byUser(up.data ?? []);
+
+  return {
+    users: p.data.map((u) => ({
+      ...u,
+      name: u.full_name || u.email,
+      branchIds: (branchesOf[u.id] ?? []).sort((a, b) => b.is_primary - a.is_primary).map((x) => x.branch_id),
+      roleIds: (rolesOf[u.id] ?? []).map((x) => x.role_id),
+      overrides: overridesOf[u.id] ?? [],
+    })),
+    roles: r.data,
+    branches: b.data,
+    permissions: perms.data,
+  };
 }
 
-// (4) El owner asigna desde todo el catálogo de la organización. Un
-// admin solo puede repartir entre sus agentes los números que a él
-// mismo le fueron asignados -- myNumberIds llega null para el owner
-// (sin restricción) y como Set para un admin.
-function assignableNumbers(phoneNumbers, isOwner, myNumberIds) {
-  if (isOwner || !myNumberIds) return phoneNumbers;
-  return phoneNumbers.filter((n) => myNumberIds.has(n.id));
-}
-
-export default function UsuariosPage() {
-  const [users, setUsers] = useState([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null);
-
+function Users() {
+  const { can, user: me, activeBranchId } = useSession();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [filterRole, setFilterRole] = useState('');
-  const [filterEstado, setFilterEstado] = useState('');
-  const [filterPlantilla, setFilterPlantilla] = useState('');
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const [filterLlamadas, setFilterLlamadas] = useState('');
+  const [fRole, setFRole] = useState('');
+  const [fStatus, setFStatus] = useState('');
+  const [fBranch, setFBranch] = useState(activeBranchId || '');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
 
-  const [templates, setTemplates] = useState([]);
-  const [organizations, setOrganizations] = useState([]);
-  const [phoneNumbers, setPhoneNumbers] = useState([]);
-  const [isOwner, setIsOwner] = useState(false);
-  const [stats, setStats] = useState(null);
-
-  // Contexto de "quién soy" -- lo usamos para dos restricciones nuevas:
-  // (4) un admin solo puede asignarle a sus agentes números que a ÉL
-  //     mismo le hayan sido asignados (no todo el catálogo).
-  // (6) un admin no puede ponerle a nadie (ni a sí mismo) más minutos
-  //     de los que el owner le asignó a él.
-  // myNumberIds/myMinutosAsignados quedan en null para el owner
-  // (sin restricción, ve/asigna todo el catálogo de su organización).
-  const [currentUserId, setCurrentUserId] = useState(null);
-  const [myNumberIds, setMyNumberIds] = useState(null);
-  const [myMinutosAsignados, setMyMinutosAsignados] = useState(null);
-
-  const [editingUser, setEditingUser] = useState(null);
-  const [addingMinutesTo, setAddingMinutesTo] = useState(null);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [changingPasswordFor, setChangingPasswordFor] = useState(null);
-
-  useEffect(() => {
-    loadContext();
+  const reload = useCallback(async () => {
+    try {
+      setData(await loadAll());
+      setError(null);
+    } catch (e) {
+      setError(await errorText(e));
+    }
   }, []);
 
-  async function loadContext() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    setCurrentUserId(user.id);
-    const { data } = await supabase.from('profiles').select('role, minutos_asignados_segundos').eq('id', user.id).single();
-    if (data?.role === 'owner') {
-      setIsOwner(true);
-      const { data: orgs } = await supabase.from('organizations').select('id, name').order('name');
-      setOrganizations(orgs ?? []);
-    } else {
-      setMyMinutosAsignados(data?.minutos_asignados_segundos || 0);
-      if (data?.role === 'admin') {
-        const { data: mine } = await supabase.from('user_phone_numbers').select('phone_number_id').eq('user_id', user.id);
-        setMyNumberIds(new Set((mine ?? []).map((r) => r.phone_number_id)));
-      }
-    }
-  }
-
   useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [search]);
+    reload();
+  }, [reload]);
 
-  useEffect(() => {
-    loadUsers(page, pageSize, debouncedSearch, filterRole, filterEstado, filterPlantilla, filterLlamadas);
-  }, [page, pageSize, debouncedSearch, filterRole, filterEstado, filterPlantilla, filterLlamadas]);
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    return data.users.filter(
+      (u) =>
+        (!q || `${u.full_name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(q)) &&
+        (!fRole || u.roleIds.includes(fRole)) &&
+        (!fStatus || u.status === fStatus) &&
+        (!fBranch || u.branchIds.includes(fBranch))
+    );
+  }, [data, search, fRole, fStatus, fBranch]);
 
-  useEffect(() => {
-    loadTemplates();
-    loadPhoneNumbers();
-    loadStats();
-  }, []);
+  const stats = useMemo(() => {
+    const u = data?.users ?? [];
+    return [
+      ['Usuarios', u.length],
+      ['Activos', u.filter((x) => x.status === 'active').length],
+      ['Invitados', u.filter((x) => x.status === 'invited').length],
+      ['Inactivos o suspendidos', u.filter((x) => x.status === 'inactive' || x.status === 'suspended').length],
+    ];
+  }, [data]);
 
-  async function loadTemplates() {
-    const { data } = await supabase.from('call_permission_templates').select('id, nombre').order('nombre');
-    setTemplates(data ?? []);
-  }
-
-  async function loadPhoneNumbers() {
-    // Solo los activos -- uno desactivado no debería poder asignarse a
-    // usuarios nuevos, aunque los que ya lo tienen asignado lo conservan
-    // (desactivar no borra la asignación, solo oculta la opción a futuro).
-    const { data } = await supabase.from('phone_numbers').select('id, numero, etiqueta').eq('activo', true).order('numero');
-    setPhoneNumbers(data ?? []);
-  }
-
-  // Los usuarios habitualmente son pocos (decenas, no miles), así que
-  // los stats se calculan trayendo las columnas necesarias y sumando
-  // en el cliente — no hace falta una función agregada en Supabase.
-  async function loadStats() {
-    const { data } = await supabase
-      .from('profiles')
-      .select('estado, llamadas_habilitadas, minutos_asignados_segundos');
-
-    const rows = data ?? [];
-    setStats({
-      total: rows.length,
-      activos: rows.filter((r) => r.estado === 'activo').length,
-      inactivos: rows.filter((r) => r.estado === 'inactivo').length,
-      conLlamadas: rows.filter((r) => r.llamadas_habilitadas).length,
-      minutosAsignados: minutos(rows.reduce((sum, r) => sum + (r.minutos_asignados_segundos || 0), 0)),
-    });
-  }
-
-  async function loadUsers(pageNum, size, searchTerm, role, estado, plantillaId, llamadas) {
-    setLoading(true);
-    setErrorMsg(null);
-
-    const from = (pageNum - 1) * size;
-    const to = from + size - 1;
-
-    let query = supabase
-      .from('profiles')
-      .select(
-        `id, full_name, role, estado, llamadas_habilitadas,
-         minutos_asignados_segundos, minutos_utilizados_segundos, minutos_disponibles_segundos,
-         plantilla_id, call_permission_templates!plantilla_id ( id, nombre ),
-         organization_id, organizations ( id, name )`,
-        { count: 'exact' }
-      );
-
-    if (searchTerm.trim()) {
-      query = query.ilike('full_name', `%${searchTerm.trim().replace(/[%,]/g, '')}%`);
-    }
-    if (role) query = query.eq('role', role);
-    if (estado) query = query.eq('estado', estado);
-    if (plantillaId) query = query.eq('plantilla_id', plantillaId);
-    if (llamadas) query = query.eq('llamadas_habilitadas', llamadas === 'si');
-
-    query = query.order('full_name').range(from, to);
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      setErrorMsg(error.message);
-    } else {
-      setUsers(data ?? []);
-      setTotalCount(count ?? 0);
-    }
-    setLoading(false);
-  }
-
-  function refresh() {
-    loadUsers(page, pageSize, debouncedSearch, filterRole, filterEstado, filterPlantilla, filterLlamadas);
-    loadStats();
-  }
-
-  async function toggleLlamadas(user) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ llamadas_habilitadas: !user.llamadas_habilitadas })
-      .eq('id', user.id);
-    if (!error) refresh();
-  }
-
-  async function saveEdit(updated) {
-    const payload = {
-      full_name: updated.full_name,
-      role: updated.role,
-      estado: updated.estado,
-      plantilla_id: updated.plantilla_id || null,
-      llamadas_habilitadas: updated.llamadas_habilitadas,
-      minutos_asignados_segundos: Math.round(Number(updated.minutos_asignados) || 0) * 60,
-    };
-    // Solo el owner puede mover a alguien de una organización a otra.
-    if (isOwner && updated.organization_id) payload.organization_id = updated.organization_id;
-
-    // (6) Un admin no puede ponerle a nadie más minutos de los que el
-    // owner le asignó a él -- se valida también aquí (además de
-    // deshabilitar el campo en la UI) porque el input del formulario
-    // se puede editar igual si alguien manipula el DOM.
-    if (!isOwner && payload.minutos_asignados_segundos > (myMinutosAsignados || 0)) {
-      return { message: `No puedes asignar más de ${minutos(myMinutosAsignados)} minutos -- es el límite que el dueño te asignó a ti.` };
-    }
-
-    const { data, error } = await supabase.from('profiles').update(payload).eq('id', updated.id).select('id');
-
-    // RLS bloquea un UPDATE en silencio: si la fila no cumple la
-    // policy, Postgres actualiza 0 filas SIN lanzar error. Sin este
-    // chequeo, el modal se cerraba como si hubiera funcionado aunque
-    // el cambio nunca se aplicara.
-    if (!error && (!data || data.length === 0)) {
-      return { message: 'No se pudo guardar — no tienes permiso para editar este usuario.' };
-    }
-
-    return error;
-  }
-
-  async function saveAddMinutes(user, minutosAAgregar) {
-    const nuevoTotal = (user.minutos_asignados_segundos || 0) + Math.round(Number(minutosAAgregar) || 0) * 60;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ minutos_asignados_segundos: nuevoTotal })
-      .eq('id', user.id);
-
-    if (!error) {
-      setAddingMinutesTo(null);
-      refresh();
-    }
-    return error;
-  }
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-
-  const columns = [
-    {
-      key: 'nombre',
-      label: 'Nombre',
-      render: (u) => {
-        const initials = getInitials(u.full_name || '?');
-        const colors = getAvatarColors(u.full_name || '?');
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <div
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: '50%',
-                background: colors.bg,
-                color: colors.color,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 700,
-                fontSize: '0.78rem',
-                flexShrink: 0,
-              }}
-            >
-              {initials}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', whiteSpace: 'nowrap' }}>{u.full_name || 'Sin nombre'}</div>
-              {/* El email vive en auth.users, no en profiles — hace falta una
-                  Edge Function con service_role (auth.admin) para traerlo.
-                  Pendiente hasta la fase de Edge Functions. */}
-              <div style={{ fontSize: '0.76rem', color: 'var(--color-text-tertiary)' }}>—</div>
-            </div>
-          </div>
-        );
-      },
-    },
-    { key: 'role', label: 'Rol', render: (u) => rolLabel(u.role) },
-    ...(isOwner
-      ? [
-          {
-            key: 'organizacion',
-            label: 'Organización',
-            render: (u) => u.organizations?.name || <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>,
-          },
-        ]
-      : []),
-    {
-      key: 'plantilla',
-      label: 'Plantilla',
-      render: (u) =>
-        u.call_permission_templates?.nombre ? (
-          <span className="status-pill" style={{ background: 'var(--color-primary-soft)', color: 'var(--color-primary)', borderColor: 'transparent' }}>
-            {u.call_permission_templates.nombre}
-          </span>
-        ) : (
-          <span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.82rem' }}>Sin plantilla</span>
-        ),
-    },
-    {
-      key: 'llamadas',
-      label: 'Llamadas',
-      render: (u) => (
-        <span
-          className="status-pill"
-          style={
-            u.llamadas_habilitadas
-              ? { background: 'var(--color-status-custom-bg)', color: 'var(--color-status-custom-text)', borderColor: 'var(--color-status-custom-border)' }
-              : { background: 'var(--color-status-error-bg)', color: 'var(--color-status-error-text)', borderColor: 'var(--color-status-error-border)' }
-          }
-        >
-          {u.llamadas_habilitadas ? 'Sí' : 'No'}
-        </span>
-      ),
-    },
-    { key: 'asignados', label: 'Min. asignados', render: (u) => minutos(u.minutos_asignados_segundos) },
-    { key: 'utilizados', label: 'Min. utilizados', render: (u) => minutos(u.minutos_utilizados_segundos) },
-    {
-      key: 'disponibles',
-      label: 'Min. disponibles',
-      render: (u) => {
-        const asignados = minutos(u.minutos_asignados_segundos);
-        const utilizados = minutos(u.minutos_utilizados_segundos);
-        const disponibles = minutos(u.minutos_disponibles_segundos);
-        const pct = asignados > 0 ? Math.min(100, (utilizados / asignados) * 100) : 0;
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 120 }}>
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: `${pct}%` }} />
-            </div>
-            <span style={{ fontSize: '0.82rem', flexShrink: 0 }}>{disponibles}</span>
-          </div>
-        );
-      },
-    },
-    {
-      key: 'estado',
-      label: 'Estado',
-      render: (u) => (
-        <span
-          className="status-pill"
-          style={
-            u.estado === 'activo'
-              ? { background: 'var(--color-status-custom-bg)', color: 'var(--color-status-custom-text)', borderColor: 'var(--color-status-custom-border)' }
-              : { background: 'var(--color-status-none-bg)', color: 'var(--color-status-none-text)', borderColor: 'var(--color-status-none-border)' }
-          }
-        >
-          {u.estado === 'activo' ? 'Activo' : 'Inactivo'}
-        </span>
-      ),
-    },
-    { key: 'ultimo_acceso', label: 'Último acceso', render: () => <span style={{ color: 'var(--color-text-tertiary)' }}>—</span> },
-    {
-      key: 'acciones',
-      label: '',
-      render: (u) => (
-        <CardMenu
-          items={[
-            { label: 'Editar usuario', onClick: () => setEditingUser(u) },
-            { label: 'Cambiar contraseña', onClick: () => setChangingPasswordFor(u) },
-            { label: u.llamadas_habilitadas ? 'Desactivar llamadas' : 'Activar llamadas', onClick: () => toggleLlamadas(u) },
-            { label: 'Agregar minutos', onClick: () => setAddingMinutesTo(u) },
-            { label: 'Ver estadísticas', onClick: () => (window.location.href = `/llamadas?usuario=${u.id}`) },
-          ]}
-        />
-      ),
-    },
-  ];
+  const roleName = (id) => data?.roles.find((r) => r.id === id)?.name ?? '—';
+  const branchName = (id) => data?.branches.find((b) => b.id === id)?.name ?? '—';
 
   return (
-    <main style={{ padding: '28px 32px', maxWidth: 1500, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.9rem', fontWeight: 750, letterSpacing: '-0.02em' }}>Usuarios</h1>
-          <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: 4 }}>Gestiona los usuarios y sus permisos</p>
-          {isOwner && (
-            <p style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-              Para crear una organización nueva (y su primer administrador), ve a{' '}
-              <a href="/settings/organizaciones" style={{ color: 'var(--color-primary)' }}>Configuración → Organizaciones</a>.
-            </p>
-          )}
-        </div>
-        <Button onClick={() => setCreateModalOpen(true)}>+ Nuevo usuario</Button>
-      </div>
+    <main style={{ padding: '1.5rem', maxWidth: 1200 }}>
+      <SettingsHeader
+        title="Usuarios"
+        subtitle="Invita a tu equipo y define su rol, sus sucursales y sus permisos."
+        action={
+          can('users.manage') && (
+            <button className="btn btn-primary" onClick={() => setInviteOpen(true)}>
+              + Invitar usuario
+            </button>
+          )
+        }
+      />
+      {error && <p style={{ color: 'var(--color-danger)', marginBottom: '0.8rem' }}>{error}</p>}
 
-      <div className="tabs-bar">
-        {TABS.map((t) => (
-          <a key={t.href} href={t.href} className={`tab-link${t.href === '/settings/usuarios' ? ' active' : ''}`}>
-            {t.label}
-          </a>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: '1rem' }}>
+        {stats.map(([label, n]) => (
+          <div key={label} className="card" style={{ padding: '0.7rem 1rem' }}>
+            <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{n}</div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{label}</div>
+          </div>
         ))}
       </div>
 
-      {errorMsg && <p style={{ color: 'var(--color-danger)', marginBottom: '1rem' }}>{errorMsg}</p>}
-
-      {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-          <StatCard icon="👥" value={stats.total} label="Usuarios totales" />
-          <StatCard icon="🟢" value={stats.activos} label="Usuarios activos" color="var(--color-status-custom-text)" />
-          <StatCard icon="🔴" value={stats.inactivos} label="Usuarios inactivos" color="var(--color-status-error-text)" />
-          <StatCard icon="📞" value={stats.conLlamadas} label="Con permisos de llamadas" />
-          <StatCard icon="⏱️" value={stats.minutosAsignados.toLocaleString('es')} label="Minutos asignados" />
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: showMoreFilters ? '0.6rem' : '1rem', alignItems: 'center' }}>
-        <div style={{ position: 'relative', width: 300, maxWidth: '100%' }}>
-          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>🔎</span>
-          <Input placeholder="Buscar por nombre…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: '2rem', height: 42 }} />
-        </div>
-        <select className="input" style={{ maxWidth: 170, height: 42 }} value={filterRole} onChange={(e) => { setFilterRole(e.target.value); setPage(1); }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '0.8rem' }}>
+        <input className="input" style={{ flex: '1 1 240px' }} placeholder="Buscar por nombre o correo…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select className="input" style={{ width: 200 }} value={fRole} onChange={(e) => setFRole(e.target.value)}>
           <option value="">Todos los roles</option>
-          <option value="admin">Administrador</option>
-          <option value="user">Agente</option>
-        </select>
-        <select className="input" style={{ maxWidth: 170, height: 42 }} value={filterEstado} onChange={(e) => { setFilterEstado(e.target.value); setPage(1); }}>
-          <option value="">Todos los estados</option>
-          <option value="activo">Activo</option>
-          <option value="inactivo">Inactivo</option>
-        </select>
-        <select className="input" style={{ maxWidth: 190, height: 42 }} value={filterPlantilla} onChange={(e) => { setFilterPlantilla(e.target.value); setPage(1); }}>
-          <option value="">Todas las plantillas</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.nombre}</option>
+          {data?.roles.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
           ))}
         </select>
-        <button className="btn btn-secondary" onClick={() => setShowMoreFilters((v) => !v)} style={{ marginLeft: 'auto' }}>
-          ▤ Filtros
-        </button>
+        <select className="input" style={{ width: 170 }} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+          <option value="">Todos los estados</option>
+          {Object.entries(STATUS).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v.label}
+            </option>
+          ))}
+        </select>
+        <select className="input" style={{ width: 180 }} value={fBranch} onChange={(e) => setFBranch(e.target.value)}>
+          <option value="">Todas las sucursales</option>
+          {data?.branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {showMoreFilters && (
-        <div style={{ marginBottom: '1rem' }}>
-          <select className="input" style={{ maxWidth: 190, height: 42 }} value={filterLlamadas} onChange={(e) => { setFilterLlamadas(e.target.value); setPage(1); }}>
-            <option value="">Llamadas: todas</option>
-            <option value="si">Llamadas: Sí</option>
-            <option value="no">Llamadas: No</option>
-          </select>
-        </div>
-      )}
-
-      {loading ? (
-        <p>Cargando…</p>
-      ) : (
-        <>
-          <DataTable columns={columns} rows={users} emptyMessage="No hay usuarios que coincidan con la búsqueda o los filtros." />
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-              Mostrando {users.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} de {totalCount} usuarios
-            </span>
-
-            {totalPages > 1 && (
-              <div style={{ display: 'flex', gap: '0.35rem' }}>
-                <button className="btn btn-secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: '0.4rem 0.6rem' }}>←</button>
-                <span style={{ padding: '0.4rem 0.7rem', fontSize: '0.85rem' }}>{page} / {totalPages}</span>
-                <button className="btn btn-secondary" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ padding: '0.4rem 0.6rem' }}>→</button>
-              </div>
+      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
+          <thead>
+            <tr style={headRow}>
+              <th style={cell}>Nombre</th>
+              <th style={cell}>Rol</th>
+              <th style={cell}>Sucursales</th>
+              <th style={cell}>Permisos individuales</th>
+              <th style={cell}>Estado</th>
+              <th style={cell} />
+            </tr>
+          </thead>
+          <tbody>
+            {!data && (
+              <tr>
+                <td colSpan={6} style={{ ...cell, textAlign: 'center', padding: '1.5rem' }}>
+                  Cargando…
+                </td>
+              </tr>
             )}
+            {data && rows.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ ...cell, textAlign: 'center', padding: '1.5rem', color: 'var(--color-text-muted)' }}>
+                  No hay usuarios que coincidan.
+                </td>
+              </tr>
+            )}
+            {rows.map((u) => (
+              <tr key={u.id} style={bodyRow}>
+                <td style={cell}>
+                  <div style={{ fontWeight: 600 }}>
+                    {u.name}
+                    {u.id === me?.id && <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}> (tú)</span>}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{u.email}</div>
+                </td>
+                <td style={cell}>{u.roleIds.map(roleName).join(', ') || '—'}</td>
+                <td style={cell}>{u.branchIds.map(branchName).join(', ') || '—'}</td>
+                <td style={cell}>{u.overrides.length ? `${u.overrides.length} excepción(es)` : '—'}</td>
+                <td style={cell}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS[u.status]?.color }} />
+                    {STATUS[u.status]?.label ?? u.status}
+                  </span>
+                </td>
+                <td style={{ ...cell, textAlign: 'right' }}>
+                  {can('users.manage') && u.id !== me?.id && (
+                    <button className="btn btn-secondary" onClick={() => setEditing(u)}>
+                      Editar
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>por página</span>
-              <select className="input" style={{ width: 80 }} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
-                {PAGE_SIZE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </>
-      )}
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invitar usuario" width={520}>
+        {data && (
+          <InviteForm
+            data={data}
+            onDone={() => {
+              setInviteOpen(false);
+              reload();
+            }}
+          />
+        )}
+      </Modal>
 
-      <EditUserModal
-        user={editingUser}
-        templates={templates}
-        organizations={organizations}
-        phoneNumbers={phoneNumbers}
-        isOwner={isOwner}
-        currentUserId={currentUserId}
-        myNumberIds={myNumberIds}
-        myMinutosAsignados={myMinutosAsignados}
-        onClose={() => setEditingUser(null)}
-        onSave={saveEdit}
-        onSaved={refresh}
-      />
-
-      <AddMinutesModal
-        user={addingMinutesTo}
-        onClose={() => setAddingMinutesTo(null)}
-        onSave={saveAddMinutes}
-      />
-
-      <ChangePasswordModal
-        user={changingPasswordFor}
-        onClose={() => setChangingPasswordFor(null)}
-      />
-
-      <CreateUserModal
-        open={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        templates={templates}
-        phoneNumbers={phoneNumbers}
-        organizations={organizations}
-        isOwner={isOwner}
-        myNumberIds={myNumberIds}
-        myMinutosAsignados={myMinutosAsignados}
-        onCreated={refresh}
-      />
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing ? `Editar: ${editing.name}` : ''} width={760}>
+        {editing && data && (
+          <EditUser
+            user={editing}
+            data={data}
+            onClose={() => setEditing(null)}
+            onSaved={async () => {
+              setEditing(null);
+              await reload();
+            }}
+          />
+        )}
+      </Modal>
     </main>
   );
 }
 
-function StatCard({ icon, value, label, color }) {
+// ------------------------------------------------------------------
+function BranchChecklist({ branches, value, onChange, allowed }) {
   return (
-    <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.85rem 1rem' }}>
-      <span style={{ fontSize: '1.1rem' }}>{icon}</span>
-      <div>
-        <div style={{ fontWeight: 750, fontSize: '1.1rem', color: color || 'var(--color-text)' }}>{value}</div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{label}</div>
-      </div>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+      {branches
+        .filter((b) => b.status === 'active')
+        .map((b) => (
+          <label key={b.id} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: '0.86rem', opacity: allowed(b.id) ? 1 : 0.5 }}>
+            <input
+              type="checkbox"
+              disabled={!allowed(b.id)}
+              checked={value.includes(b.id)}
+              onChange={(e) => onChange(e.target.checked ? [...value, b.id] : value.filter((x) => x !== b.id))}
+            />
+            {b.name}
+          </label>
+        ))}
     </div>
   );
 }
 
-function EditUserModal({ user, templates, organizations, phoneNumbers, isOwner, currentUserId, myNumberIds, myMinutosAsignados, onClose, onSave, onSaved }) {
-  const [form, setForm] = useState(null);
-  const [selectedNumeroIds, setSelectedNumeroIds] = useState(new Set());
+function useBranchAllowed() {
+  const { scopeOf, branches: mine } = useSession();
+  const orgScope = scopeOf('users.manage') === 'organization';
+  return (id) => orgScope || mine.some((b) => b.id === id);
+}
+
+function InviteForm({ data, onDone }) {
+  const allowed = useBranchAllowed();
+  const [v, setV] = useState({ full_name: '', email: '', role_key: 'operator', branch_ids: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  // (owner multi-org) el catálogo global (`phoneNumbers`) que llega
-  // como prop está filtrado por RLS a la organización DEL OWNER, no a
-  // la del usuario que se está editando -- si el owner administra
-  // varias organizaciones, eso mostraba números de una organización
-  // distinta a la del usuario, y por eso el guardado se rechazaba
-  // (con toda razón: un número de la organización A no se le puede
-  // asignar a alguien de la organización B). Para el owner, el
-  // catálogo se recarga según `form.organization_id`.
-  const [ownerOrgNumbers, setOwnerOrgNumbers] = useState(null);
 
-  useEffect(() => {
-    if (user) {
-      setForm({
-        id: user.id,
-        full_name: user.full_name || '',
-        role: user.role,
-        estado: user.estado,
-        plantilla_id: user.plantilla_id || '',
-        llamadas_habilitadas: user.llamadas_habilitadas,
-        minutos_asignados: minutos(user.minutos_asignados_segundos),
-        organization_id: user.organization_id || '',
-      });
-      setError(null);
+  async function submit(e) {
+    e.preventDefault();
+    setError(null);
+    if (!v.branch_ids.length) return setError('Selecciona al menos una sucursal.');
+    setSaving(true);
+    const { error: fnErr } = await supabase.functions.invoke('invite-user', { body: v });
+    setSaving(false);
+    if (fnErr) return setError(await errorText(fnErr, 'No se pudo enviar la invitación.'));
+    trackEvent('user.invite_sent', { metadata: { role_key: v.role_key, branches: v.branch_ids.length } });
+    onDone();
+  }
 
-      supabase
-        .from('user_phone_numbers')
-        .select('phone_number_id')
-        .eq('user_id', user.id)
-        .then(({ data }) => setSelectedNumeroIds(new Set((data ?? []).map((r) => r.phone_number_id))));
-    } else {
-      setForm(null);
-      setSelectedNumeroIds(new Set());
-      setOwnerOrgNumbers(null);
-    }
-  }, [user]);
+  return (
+    <form onSubmit={submit}>
+      <label style={{ display: 'block', marginBottom: '0.7rem' }}>
+        <span style={{ fontSize: '0.85rem' }}>Nombre completo</span>
+        <input className="input" required value={v.full_name} onChange={(e) => setV({ ...v, full_name: e.target.value })} />
+      </label>
+      <label style={{ display: 'block', marginBottom: '0.7rem' }}>
+        <span style={{ fontSize: '0.85rem' }}>Correo</span>
+        <input className="input" type="email" required value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} />
+      </label>
+      <label style={{ display: 'block', marginBottom: '0.7rem' }}>
+        <span style={{ fontSize: '0.85rem' }}>Rol</span>
+        <select className="input" value={v.role_key} onChange={(e) => setV({ ...v, role_key: e.target.value })}>
+          {data.roles.map((r) => (
+            <option key={r.id} value={r.key}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div style={{ marginBottom: '0.9rem' }}>
+        <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 6 }}>Sucursales</span>
+        <BranchChecklist branches={data.branches} value={v.branch_ids} onChange={(ids) => setV({ ...v, branch_ids: ids })} allowed={allowed} />
+      </div>
+      <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.8rem' }}>
+        Le llegará un correo para crear su contraseña. Solo puedes asignar roles con igual o menor alcance que el tuyo.
+      </p>
+      {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginBottom: '0.7rem' }}>{error}</p>}
+      <button className="btn btn-primary" disabled={saving} style={{ width: '100%' }}>
+        {saving ? 'Enviando…' : 'Enviar invitación'}
+      </button>
+    </form>
+  );
+}
 
-  useEffect(() => {
-    if (!isOwner || !form?.organization_id) {
-      setOwnerOrgNumbers(null);
-      return;
-    }
-    supabase
-      .from('phone_numbers')
-      .select('id, numero, etiqueta')
-      .eq('activo', true)
-      .eq('organization_id', form.organization_id)
-      .order('numero')
-      .then(({ data }) => setOwnerOrgNumbers(data ?? []));
-  }, [isOwner, form?.organization_id]);
+// ------------------------------------------------------------------
+function EditUser({ user, data, onClose, onSaved }) {
+  const allowed = useBranchAllowed();
+  const [status, setStatus] = useState(user.status);
+  const [roleId, setRoleId] = useState(user.roleIds[0] ?? '');
+  const [branchIds, setBranchIds] = useState(user.branchIds);
+  const [overrides, setOverrides] = useState(() => Object.fromEntries(user.overrides.map((o) => [o.permission_key, o])));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
 
-  if (!user || !form) return null;
+  const modules = useMemo(() => {
+    const m = {};
+    for (const p of data.permissions) (m[p.module] ||= []).push(p);
+    return m;
+  }, [data.permissions]);
 
-  const options = isOwner ? ownerOrgNumbers ?? [] : assignableNumbers(phoneNumbers, isOwner, myNumberIds);
-  // (6) Un admin no puede subir ni su propio límite de minutos ni el de
-  // nadie por encima de lo que el owner le asignó a él -- el campo
-  // queda de solo lectura para el admin cuando se edita a sí mismo.
-  const minutosLocked = !isOwner && user.id === currentUserId;
-
-  function toggleNumero(id) {
-    setSelectedNumeroIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  function setOverride(key, value) {
+    setOverrides((o) => {
+      const next = { ...o };
+      if (value === '') delete next[key];
+      else if (value === 'deny') next[key] = { permission_key: key, effect: 'deny', scope: null };
+      else next[key] = { permission_key: key, effect: 'allow', scope: value };
       return next;
     });
   }
 
-  async function handleSave() {
-    setSaving(true);
+  async function save() {
     setError(null);
-
-    const err = await onSave(form);
-    if (err) {
+    if (!branchIds.length) return setError('El usuario debe tener al menos una sucursal.');
+    setSaving(true);
+    try {
+      // Estado
+      if (status !== user.status) {
+        const { error: e } = await supabase.from('profiles').update({ status }).eq('id', user.id);
+        if (e) throw e;
+      }
+      // Rol (uno por usuario en esta pantalla)
+      if (roleId && !(user.roleIds.length === 1 && user.roleIds[0] === roleId)) {
+        const { error: e1 } = await supabase.from('user_roles').insert({ user_id: user.id, role_id: roleId });
+        if (e1 && e1.code !== '23505') throw e1;
+        const old = user.roleIds.filter((r) => r !== roleId);
+        if (old.length) {
+          const { error: e2 } = await supabase.from('user_roles').delete().eq('user_id', user.id).in('role_id', old);
+          if (e2) throw e2;
+        }
+      }
+      // Sucursales
+      const add = branchIds.filter((b) => !user.branchIds.includes(b));
+      const remove = user.branchIds.filter((b) => !branchIds.includes(b));
+      if (add.length) {
+        const { error: e } = await supabase.from('user_branches').insert(add.map((branch_id) => ({ user_id: user.id, branch_id })));
+        if (e) throw e;
+      }
+      if (remove.length) {
+        const { error: e } = await supabase.from('user_branches').delete().eq('user_id', user.id).in('branch_id', remove);
+        if (e) throw e;
+      }
+      // Permisos individuales
+      const before = Object.fromEntries(user.overrides.map((o) => [o.permission_key, o]));
+      const changedKeys = new Set([...Object.keys(before), ...Object.keys(overrides)]);
+      for (const key of changedKeys) {
+        const a = before[key];
+        const b = overrides[key];
+        if (a && b && a.effect === b.effect && a.scope === b.scope) continue;
+        if (a) {
+          const { error: e } = await supabase.from('user_permissions').delete().eq('user_id', user.id).eq('permission_key', key);
+          if (e) throw e;
+        }
+        if (b) {
+          const { error: e } = await supabase.from('user_permissions').insert({ user_id: user.id, permission_key: key, effect: b.effect, scope: b.scope });
+          if (e) throw e;
+        }
+      }
+      trackEvent('user.edited', { entityType: 'profiles', entityId: user.id });
+      onSaved();
+    } catch (e) {
+      setError(await errorText(e));
+    } finally {
       setSaving(false);
-      setError(err.message);
-      return;
     }
-
-    // Los números se guardan aparte del resto del perfil -- es una
-    // tabla distinta (user_phone_numbers), así que se sincroniza por
-    // diferencia: qué se agregó y qué se quitó desde que se abrió el
-    // modal. A diferencia de antes, el modal ya NO se cierra hasta que
-    // esto también termine bien -- si algo falla (ej. RLS bloqueando
-    // el insert), el error queda visible aquí mismo en vez de perderse
-    // en silencio después de que el modal ya se cerró.
-    const { data: current } = await supabase.from('user_phone_numbers').select('phone_number_id').eq('user_id', user.id);
-    const currentIds = new Set((current ?? []).map((r) => r.phone_number_id));
-
-    const toAdd = [...selectedNumeroIds].filter((id) => !currentIds.has(id));
-    const toRemove = [...currentIds].filter((id) => !selectedNumeroIds.has(id));
-
-    if (toAdd.length > 0) {
-      const { error: addError } = await supabase
-        .from('user_phone_numbers')
-        .insert(toAdd.map((phone_number_id) => ({ user_id: user.id, phone_number_id })));
-      if (addError) {
-        setSaving(false);
-        setError(`El resto de los cambios se guardó, pero no se pudo asignar el número: ${addError.message}`);
-        return;
-      }
-    }
-    if (toRemove.length > 0) {
-      const { error: removeError } = await supabase.from('user_phone_numbers').delete().eq('user_id', user.id).in('phone_number_id', toRemove);
-      if (removeError) {
-        setSaving(false);
-        setError(`El resto de los cambios se guardó, pero no se pudo quitar el número: ${removeError.message}`);
-        return;
-      }
-    }
-
-    setSaving(false);
-    onClose();
-    onSaved?.();
   }
 
+  async function sendReset() {
+    const { error: e } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: `${window.location.origin}/set-password` });
+    trackEvent('user.password_reset_sent', { entityType: 'profiles', entityId: user.id });
+    setInfo(e ? await errorText(e) : `Se envió a ${user.email} un enlace para definir una nueva contraseña.`);
+  }
+
+  const label = { display: 'block', fontSize: '0.85rem', marginBottom: 6, fontWeight: 600 };
+
   return (
-    <Modal open={!!user} onClose={onClose} title="Editar usuario">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <Input label="Nombre completo" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-
-        {isOwner && (
-          <label style={{ display: 'block' }}>
-            <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Organización</span>
-            <select className="input" value={form.organization_id} onChange={(e) => setForm({ ...form, organization_id: e.target.value })}>
-              {organizations.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}</option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label style={{ display: 'block' }}>
-          <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Rol</span>
-          <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="user">Agente</option>
-            <option value="admin">Administrador</option>
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '1rem' }}>
+        <label>
+          <span style={label}>Estado</span>
+          <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="active">Activo</option>
+            <option value="inactive">Inactivo</option>
+            <option value="suspended">Suspendido</option>
+            {user.status === 'invited' && <option value="invited">Invitado</option>}
           </select>
         </label>
-
-        <label style={{ display: 'block' }}>
-          <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Estado</span>
-          <select className="input" value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
-            <option value="activo">Activo</option>
-            <option value="inactivo">Inactivo</option>
-          </select>
-        </label>
-
-        <label style={{ display: 'block' }}>
-          <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Plantilla</span>
-          <select className="input" value={form.plantilla_id} onChange={(e) => setForm({ ...form, plantilla_id: e.target.value })}>
-            <option value="">Sin plantilla</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.nombre}</option>
+        <label>
+          <span style={label}>Rol</span>
+          <select className="input" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+            {data.roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
             ))}
           </select>
         </label>
+      </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.88rem' }}>
-          <input
-            type="checkbox"
-            checked={form.llamadas_habilitadas}
-            onChange={(e) => setForm({ ...form, llamadas_habilitadas: e.target.checked })}
-          />
-          Llamadas habilitadas
-        </label>
+      <div style={{ marginBottom: '1rem' }}>
+        <span style={label}>Sucursales</span>
+        <BranchChecklist branches={data.branches} value={branchIds} onChange={setBranchIds} allowed={allowed} />
+      </div>
 
-        <Input
-          label="Minutos asignados"
-          type="number"
-          min={0}
-          max={!isOwner ? minutos(myMinutosAsignados) : undefined}
-          value={form.minutos_asignados}
-          disabled={minutosLocked}
-          onChange={(e) => setForm({ ...form, minutos_asignados: e.target.value })}
-        />
-        {!isOwner && (
-          <p style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)', marginTop: -6 }}>
-            {minutosLocked
-              ? 'Solo el dueño puede cambiar tus propios minutos asignados.'
-              : `No puedes asignar más de ${minutos(myMinutosAsignados)} minutos — es tu propio límite.`}
-          </p>
-        )}
+      <span style={label}>Permisos individuales</span>
+      <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: 8 }}>
+        "Según su rol" usa lo que da el rol. Puedes conceder un permiso extra (por ejemplo, Importar) o denegarlo aunque el rol lo tenga.
+      </p>
+      <div className="card" style={{ padding: 0, maxHeight: 300, overflowY: 'auto', marginBottom: '1rem' }}>
+        {Object.entries(modules).map(([mod, perms]) => (
+          <div key={mod}>
+            <div style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--color-text-muted)', background: 'var(--color-btn-secondary-bg)' }}>{mod}</div>
+            {perms.map((p) => {
+              const o = overrides[p.key];
+              const value = !o ? '' : o.effect === 'deny' ? 'deny' : o.scope;
+              return (
+                <div key={p.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0.35rem 0.75rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.84rem' }}>
+                  <span>{p.description}</span>
+                  <select className="input" style={{ width: 200, height: 32 }} value={value} onChange={(e) => setOverride(p.key, e.target.value)}>
+                    <option value="">Según su rol</option>
+                    <option value="own">Permitir · {SCOPE_LABEL.own}</option>
+                    <option value="branch">Permitir · {SCOPE_LABEL.branch}</option>
+                    <option value="organization">Permitir · {SCOPE_LABEL.organization}</option>
+                    <option value="deny">Denegar</option>
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
 
-        <div>
-          <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Números para llamar (caller ID)</span>
-          {isOwner && ownerOrgNumbers === null ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Cargando catálogo…</p>
-          ) : options.length === 0 ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-              {isOwner
-                ? 'Esta organización todavía no tiene números en su catálogo — agrégalos desde la pestaña "Números" mientras administras esa organización.'
-                : 'Todavía no tienes ningún número asignado a ti mismo — pídele al dueño que te asigne uno antes de repartirlo.'}
-            </p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: '0.5rem 0.75rem' }}>
-              {options.map((n) => (
-                <label key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
-                  <input type="checkbox" checked={selectedNumeroIds.has(n.id)} onChange={() => toggleNumero(n.id)} />
-                  {n.numero}{n.etiqueta ? ` — ${n.etiqueta}` : ''}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
+      {info && <p style={{ fontSize: '0.84rem', marginBottom: '0.7rem' }}>{info}</p>}
+      {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginBottom: '0.7rem' }}>{error}</p>}
 
-        {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>{error}</p>}
-
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: 4 }}>
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar cambios'}</Button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-secondary" onClick={sendReset} disabled={saving}>
+          Enviar enlace de contraseña
+        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
+            Cancelar
+          </button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? 'Guardando…' : 'Guardar'}
+          </button>
         </div>
       </div>
-    </Modal>
-  );
-}
-
-function AddMinutesModal({ user, onClose, onSave }) {
-  const [valor, setValor] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    setValor('');
-    setError(null);
-  }, [user]);
-
-  if (!user) return null;
-
-  async function handleSave() {
-    setSaving(true);
-    const err = await onSave(user, valor);
-    setSaving(false);
-    if (err) setError(err.message);
-  }
-
-  return (
-    <Modal open={!!user} onClose={onClose} title={`Agregar minutos a ${user.full_name || 'usuario'}`}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-          Actualmente tiene {minutos(user.minutos_asignados_segundos)} minutos asignados. Este valor se suma a lo que ya tiene.
-        </p>
-        <Input label="Minutos a agregar" type="number" min={0} value={valor} onChange={(e) => setValor(e.target.value)} />
-        {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>{error}</p>}
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: 4 }}>
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving || !valor}>{saving ? 'Guardando…' : 'Agregar'}</Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// Crear un usuario implica crear su cuenta de auth (auth.admin.inviteUserByEmail),
-// lo cual requiere service_role -- por eso pasa por la Edge Function
-// admin-create-user en vez de un insert directo desde el cliente.
-function CreateUserModal({ open, onClose, templates, phoneNumbers, organizations, isOwner, myNumberIds, myMinutosAsignados, onCreated }) {
-  const [form, setForm] = useState({ full_name: '', email: '', role: 'user', plantilla_id: '', llamadas_habilitadas: true, minutos_asignados: 0, organization_id: '' });
-  const [selectedNumeroIds, setSelectedNumeroIds] = useState(new Set());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  // Mismo fix que en EditUserModal: para el owner, el catálogo debe
-  // ser el de la organización elegida para este usuario nuevo, no el
-  // de la propia organización del owner.
-  const [ownerOrgNumbers, setOwnerOrgNumbers] = useState(null);
-
-  useEffect(() => {
-    if (!isOwner || !form.organization_id) {
-      setOwnerOrgNumbers(null);
-      return;
-    }
-    supabase
-      .from('phone_numbers')
-      .select('id, numero, etiqueta')
-      .eq('activo', true)
-      .eq('organization_id', form.organization_id)
-      .order('numero')
-      .then(({ data }) => setOwnerOrgNumbers(data ?? []));
-  }, [isOwner, form.organization_id]);
-
-  const options = isOwner ? ownerOrgNumbers ?? [] : assignableNumbers(phoneNumbers, isOwner, myNumberIds);
-
-  function toggleNumero(id) {
-    setSelectedNumeroIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleSubmit() {
-    if (!form.full_name.trim() || !form.email.trim()) {
-      setError('Nombre y email son obligatorios.');
-      return;
-    }
-    if (isOwner && !form.organization_id) {
-      setError('Elige a qué organización pertenece este usuario.');
-      return;
-    }
-    // (6) Mismo tope que en edición: un admin no puede repartir más
-    // minutos de los que el owner le asignó a él.
-    if (!isOwner && Math.round(Number(form.minutos_asignados) || 0) * 60 > (myMinutosAsignados || 0)) {
-      setError(`No puedes asignar más de ${minutos(myMinutosAsignados)} minutos — es tu propio límite.`);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-
-    const { data, error: fnError } = await supabase.functions.invoke('admin-create-user', {
-      body: { ...form, phone_number_ids: [...selectedNumeroIds] },
-    });
-
-    setSaving(false);
-
-    if (fnError || data?.error) {
-      // El mensaje genérico de Supabase ("Edge Function returned a
-      // non-2xx status code") no dice el motivo real -- el cuerpo con
-      // el mensaje específico de admin-create-user viene en
-      // fnError.context, no en fnError.message. Mismo parche que ya
-      // tiene fetchToken() en lib/telnyx/client.js.
-      let detail = data?.error || fnError?.message;
-      if (fnError?.context) {
-        try {
-          const body = await fnError.context.json();
-          if (body?.error) detail = body.error;
-        } catch {
-          // Si el cuerpo no se puede leer como JSON, nos quedamos con
-          // el mensaje genérico -- mejor eso que romper aquí.
-        }
-      }
-      setError(detail);
-      return;
-    }
-
-    setForm({ full_name: '', email: '', role: 'user', plantilla_id: '', llamadas_habilitadas: true, minutos_asignados: 0, organization_id: '' });
-    setSelectedNumeroIds(new Set());
-    onCreated?.();
-    onClose();
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Nuevo usuario">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <Input label="Nombre completo" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-        <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-
-        {isOwner ? (
-          <>
-            <label style={{ display: 'block' }}>
-              <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Organización</span>
-              <select className="input" value={form.organization_id} onChange={(e) => setForm({ ...form, organization_id: e.target.value })}>
-                <option value="">Selecciona una organización</option>
-                {organizations.map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-            </label>
-            <p style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)' }}>
-              Como dueño, los usuarios que crees siempre quedan como Administrador de esa organización — para agentes, pídele al administrador de la organización que los cree él.
-            </p>
-          </>
-        ) : (
-          <label style={{ display: 'block' }}>
-            <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Rol</span>
-            <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              <option value="user">Agente</option>
-              <option value="admin">Administrador</option>
-            </select>
-          </label>
-        )}
-
-        <label style={{ display: 'block' }}>
-          <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Plantilla</span>
-          <select className="input" value={form.plantilla_id} onChange={(e) => setForm({ ...form, plantilla_id: e.target.value })}>
-            <option value="">Sin plantilla</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.nombre}</option>
-            ))}
-          </select>
-        </label>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.88rem' }}>
-          <input
-            type="checkbox"
-            checked={form.llamadas_habilitadas}
-            onChange={(e) => setForm({ ...form, llamadas_habilitadas: e.target.checked })}
-          />
-          Llamadas habilitadas
-        </label>
-
-        <Input
-          label="Minutos iniciales"
-          type="number"
-          min={0}
-          max={!isOwner ? minutos(myMinutosAsignados) : undefined}
-          value={form.minutos_asignados}
-          onChange={(e) => setForm({ ...form, minutos_asignados: e.target.value })}
-        />
-        {!isOwner && (
-          <p style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)', marginTop: -6 }}>
-            No puedes asignar más de {minutos(myMinutosAsignados)} minutos — es tu propio límite.
-          </p>
-        )}
-
-        <div>
-          <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 4 }}>Números para llamar (caller ID)</span>
-          {isOwner && !form.organization_id ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Elige primero la organización.</p>
-          ) : isOwner && ownerOrgNumbers === null ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Cargando catálogo…</p>
-          ) : options.length === 0 ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-              {isOwner
-                ? 'Esta organización todavía no tiene números en su catálogo — agrégalos desde la pestaña "Números" mientras la administras.'
-                : 'Todavía no tienes ningún número asignado a ti mismo — pídele al dueño que te asigne uno antes de repartirlo.'}
-            </p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: '0.5rem 0.75rem' }}>
-              {options.map((n) => (
-                <label key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
-                  <input type="checkbox" checked={selectedNumeroIds.has(n.id)} onChange={() => toggleNumero(n.id)} />
-                  {n.numero}{n.etiqueta ? ` — ${n.etiqueta}` : ''}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>{error}</p>}
-        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-tertiary)' }}>
-          Se le envía un correo de invitación para que defina su propia contraseña.
-        </p>
-
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: 4 }}>
-          <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? 'Creando…' : 'Crear usuario'}</Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-// (3) El admin/owner cambia directamente la contraseña de un agente
-// (no envía un correo de recuperación) -- por eso necesita
-// service_role (auth.admin.updateUserById), y por eso pasa por una
-// Edge Function nueva en vez de una llamada directa desde el cliente:
-// mismo patrón que admin-create-user.
-function ChangePasswordModal({ user, onClose }) {
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    setPassword('');
-    setConfirm('');
-    setError(null);
-    setDone(false);
-  }, [user]);
-
-  if (!user) return null;
-
-  async function handleSave() {
-    if (password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres.');
-      return;
-    }
-    if (password !== confirm) {
-      setError('Las contraseñas no coinciden.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-
-    const { data, error: fnError } = await supabase.functions.invoke('admin-set-user-password', {
-      body: { user_id: user.id, new_password: password },
-    });
-
-    setSaving(false);
-
-    if (fnError || data?.error) {
-      // Mismo parche que ya tiene fetchToken() en lib/telnyx/client.js y
-      // handleSubmit() en CreateUserModal -- el mensaje real viene en
-      // fnError.context, no en fnError.message.
-      let detail = data?.error || fnError?.message;
-      if (fnError?.context) {
-        try {
-          const body = await fnError.context.json();
-          if (body?.error) detail = body.error;
-        } catch {
-          // Si el cuerpo no se puede leer como JSON, nos quedamos con
-          // el mensaje genérico.
-        }
-      }
-      setError(detail);
-      return;
-    }
-
-    setDone(true);
-  }
-
-  return (
-    <Modal open={!!user} onClose={onClose} title={`Cambiar contraseña de ${user.full_name || 'usuario'}`}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {done ? (
-          <p style={{ fontSize: '0.88rem' }}>
-            Contraseña actualizada. Avísale a {user.full_name || 'la persona'} para que la use en su próximo ingreso.
-          </p>
-        ) : (
-          <>
-            <Input label="Nueva contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <Input label="Confirmar contraseña" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-            {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>{error}</p>}
-          </>
-        )}
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: 4 }}>
-          <Button variant="secondary" onClick={onClose}>{done ? 'Cerrar' : 'Cancelar'}</Button>
-          {!done && (
-            <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Cambiar contraseña'}</Button>
-          )}
-        </div>
-      </div>
-    </Modal>
+    </div>
   );
 }
