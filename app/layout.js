@@ -9,6 +9,8 @@ import AuthWatcher from '../components/ui/authWatcher';
 import ActivityTracker from '../components/ActivityTracker';
 import { ThemeProvider } from '../lib/theme/themeContext';
 import { SessionProvider } from '../lib/auth/sessionContext';
+import { CallProvider } from '../lib/calls/callContext';
+import CallUI from '../components/calls/callUI';
 
 export const metadata = {
   title: 'Plataforma de Leads',
@@ -40,6 +42,7 @@ export default function RootLayout({ children }) {
       <body>
         <ThemeProvider>
           <SessionProvider>
+            <CallProvider>
             <AuthWatcher />
             <SubdomainGuard />
             <Suspense fallback={null}>
@@ -48,6 +51,8 @@ export default function RootLayout({ children }) {
             <BackgroundPicker />
             <Sidebar />
             <AppShell>{children}</AppShell>
+            <CallUI />
+            </CallProvider>
           </SessionProvider>
         </ThemeProvider>
       </body>

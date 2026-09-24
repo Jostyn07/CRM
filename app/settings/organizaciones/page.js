@@ -35,14 +35,17 @@ function Organizations() {
   const [msg, setMsg] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [supportFor, setSupportFor] = useState(null);
+  const [minutes, setMinutes] = useState({});
 
   const load = useCallback(async () => {
-    const [o, b, p, s] = await Promise.all([
+    const [o, b, p, s, m] = await Promise.all([
       supabase.from('organizations').select('*').order('created_at', { ascending: false }),
       supabase.from('branches').select('organization_id'),
       supabase.from('profiles').select('organization_id'),
       supabase.from('platform_support_sessions').select('*').is('ended_at', null).gt('expires_at', new Date().toISOString()),
+      supabase.from('organization_minutes').select('organization_id, granted_seconds'),
     ]);
+    setMinutes(Object.fromEntries((m.data ?? []).map((x) => [x.organization_id, x.granted_seconds])));
     const count = (rows) => (rows ?? []).reduce((a, x) => ((a[x.organization_id] = (a[x.organization_id] ?? 0) + 1), a), {});
     const bc = count(b.data);
     const pc = count(p.data);
@@ -59,6 +62,16 @@ function Organizations() {
     if (next === 'suspended' && !confirm(`Al suspender "${org.name}" ningún usuario de esa organización podrá operar. ¿Continuar?`)) return;
     const { error } = await supabase.from('organizations').update({ status: next }).eq('id', org.id);
     setMsg(error ? await errorText(error) : null);
+    load();
+  }
+
+  async function grantMinutes(org) {
+    const value = prompt(`Minutos a cargar a "${org.name}" (usa un número negativo para restar):`);
+    const n = Math.round(Number(value));
+    if (!value || !n) return;
+    const note = prompt('Nota (opcional, ej. número de factura):') || null;
+    const { error } = await supabase.rpc('grant_org_minutes', { p_org: org.id, p_minutes: n, p_note: note });
+    setMsg(error ? await errorText(error) : `${n > 0 ? 'Se cargaron' : 'Se restaron'} ${Math.abs(n)} min a ${org.name}.`);
     load();
   }
 
@@ -90,6 +103,7 @@ function Organizations() {
               <th style={cell}>Organización</th>
               <th style={cell}>Sucursales</th>
               <th style={cell}>Usuarios</th>
+              <th style={cell}>Minutos</th>
               <th style={cell}>Creada</th>
               <th style={cell}>Estado</th>
               <th style={cell} />
@@ -98,7 +112,7 @@ function Organizations() {
           <tbody>
             {orgs.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ ...cell, textAlign: 'center', padding: '1.5rem', color: 'var(--color-text-muted)' }}>
+                <td colSpan={7} style={{ ...cell, textAlign: 'center', padding: '1.5rem', color: 'var(--color-text-muted)' }}>
                   Todavía no hay organizaciones.
                 </td>
               </tr>
@@ -113,9 +127,13 @@ function Organizations() {
                   </td>
                   <td style={cell}>{o.branches}</td>
                   <td style={cell}>{o.users}</td>
+                  <td style={cell}>{Math.floor((minutes[o.id] ?? 0) / 60).toLocaleString('es-CO')}</td>
                   <td style={cell}>{fullDate(o.created_at)}</td>
                   <td style={cell}>{o.status === 'active' ? 'Activa' : 'Suspendida'}</td>
                   <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-secondary" onClick={() => grantMinutes(o)}>
+                      Cargar minutos
+                    </button>{' '}
                     {s ? (
                       <button className="btn btn-secondary" onClick={() => endSession(s.id)}>
                         Cerrar soporte (vence {new Date(s.expires_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})

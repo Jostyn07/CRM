@@ -14,6 +14,8 @@ import { useLeadConfig } from '../../../lib/leads/useLeadConfig';
 import { getLead, getLeadActivity, restore, softDelete } from '../../../lib/leads/api';
 import { describeEvent, fullDate, relTime } from '../../../lib/leads/format';
 import { trackEvent, trackTab } from '../../../lib/activity/tracker';
+import LeadCallsTab from '../../../components/calls/leadCallsTab';
+import { useCalls } from '../../../lib/calls/callContext';
 
 const TABS = [
   { key: 'informacion', label: 'Información' },
@@ -40,6 +42,7 @@ function LeadDetail() {
   const searchParams = useSearchParams();
   const { can } = useSession();
   const config = useLeadConfig();
+  const { openDialer } = useCalls();
 
   const [lead, setLead] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -140,6 +143,14 @@ function LeadDetail() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            {!deleted && can('calls.make') && lead.phone_normalized && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => openDialer({ to: lead.phone_normalized, leadId: lead.id, leadName: `${lead.first_name} ${lead.last_name ?? ''}`.trim() })}
+              >
+                📞 Llamar
+              </button>
+            )}
             {!deleted && can('leads.update') && (
               <button
                 className="btn btn-primary"
@@ -184,7 +195,7 @@ function LeadDetail() {
 
       {tab === 'informacion' && <InfoTab lead={lead} config={config} />}
       {tab === 'actividad' && <ActivityTab leadId={id} maps={maps} canView={can('audit.view')} />}
-      {tab === 'llamadas' && <Upcoming text="El historial de llamadas llega con la integración de Telnyx." />}
+      {tab === 'llamadas' && <LeadCallsTab lead={lead} users={maps.user} />}
       {tab === 'whatsapp' && <Upcoming text="Las conversaciones de WhatsApp llegan en la Fase 4 (Comunicación)." />}
       {tab === 'tareas' && <Upcoming text="Las tareas llegan en la Fase 3 (Actividades y tareas)." />}
       {tab === 'oportunidad' && <Upcoming text="Las oportunidades llegan en la Fase 2 (Embudos)." />}
