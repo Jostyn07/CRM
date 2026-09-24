@@ -4,7 +4,7 @@
 import { usePathname } from 'next/navigation';
 import { useSession } from '../../lib/auth/sessionContext';
 
-const NO_SIDEBAR = ['/login', '/', '/set-password', '/auth/aceptar-invitacion'];
+const NO_SIDEBAR = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/registro'];
 
 export default function AppShell({ children }) {
   const pathname = usePathname();

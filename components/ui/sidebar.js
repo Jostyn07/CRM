@@ -28,7 +28,7 @@ const SETTINGS_LINKS = [
   { href: '/settings', label: 'Preferencias', show: () => true },
 ];
 
-const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion'];
+const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/registro'];
 
 export default function Sidebar() {
   const pathname = usePathname();
