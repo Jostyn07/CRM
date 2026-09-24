@@ -20,6 +20,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const expired = searchParams.get('expired') === '1';
   const inactive = searchParams.get('inactive') === '1';
+  const confirmed = searchParams.get('confirmed') === '1';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -64,6 +65,12 @@ function LoginForm() {
         {expired && !error && (
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
             Tu sesión expiró. Inicia sesión de nuevo para continuar.
+          </p>
+        )}
+
+        {confirmed && !error && (
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            Tu correo quedó confirmado. Ya puedes iniciar sesión.
           </p>
         )}
 
@@ -126,6 +133,13 @@ function LoginForm() {
             Pídele a un administrador de tu organización que te envíe un enlace para restablecerla.
           </p>
         )}
+
+        <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border)', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: 8 }}>¿Tu empresa aún no tiene cuenta?</p>
+          <a href="/registro" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+            Registrar mi empresa
+          </a>
+        </div>
       </form>
     </main>
   );
