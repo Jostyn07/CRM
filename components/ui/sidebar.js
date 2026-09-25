@@ -9,6 +9,7 @@ import { useSession } from '../../lib/auth/sessionContext';
 import ThemeToggle from './themeToggle';
 import { useMyTaskCounts } from '../../lib/tasks/api';
 import { useChatUnread } from '../../lib/chat/api';
+import { useWaUnread } from '../../lib/whatsapp/api';
 
 // show(session) decide si el enlace aparece
 const LINKS = [
@@ -16,6 +17,7 @@ const LINKS = [
   { href: '/leads', label: 'Leads', icon: '👥', show: (s) => s.can('leads.view') },
   { href: '/tareas', label: 'Tareas', icon: '✅', show: (s) => !!s.profile?.organization_id, badge: 'tasks' },
   { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('calls.view') || s.can('calls.make') },
+  { href: '/whatsapp', label: 'WhatsApp', icon: '🟢', show: (s) => s.can('whatsapp.view'), badge: 'wa' },
   { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile?.organization_id, badge: 'chat' },
   { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('opportunities.view') },
   { href: '/imports', label: 'Importar', icon: '📥', show: (s) => s.can('leads.import') },
@@ -35,7 +37,7 @@ const SETTINGS_LINKS = [
   { href: '/settings/chat-auditoria', label: 'Auditoría de chat', show: (s) => s.can('chat.audit') },
   { href: '/settings/numeros', label: 'Números', show: (s) => s.isPlatformOwner || s.can('calls.manage_numbers') },
   { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
-  { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('settings.manage') },
+  { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
   { href: '/settings', label: 'Mi cuenta', show: () => true },
 ];
@@ -51,6 +53,7 @@ export default function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(pathname?.startsWith('/settings'));
   const taskCounts = useMyTaskCounts(profile?.organization_id ? user?.id : null);
   const chatUnread = useChatUnread(profile?.organization_id ? user?.id : null);
+  const waUnread = useWaUnread(profile?.organization_id && session.can('whatsapp.view') ? user?.id : null);
 
   useEffect(() => {
     if (pathname?.startsWith('/settings')) setSettingsOpen(true);
@@ -168,6 +171,14 @@ export default function Sidebar() {
                   }}
                 >
                   {taskCounts.overdue > 0 ? taskCounts.overdue : taskCounts.open}
+                </span>
+              )}
+              {link.badge === 'wa' && waUnread > 0 && (
+                <span
+                  title={`${waUnread} mensaje(s) de WhatsApp sin leer`}
+                  style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: '#25D366' }}
+                >
+                  {waUnread > 99 ? '99+' : waUnread}
                 </span>
               )}
               {link.badge === 'chat' && chatUnread > 0 && (

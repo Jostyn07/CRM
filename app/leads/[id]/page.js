@@ -18,6 +18,7 @@ import LeadCallsTab from '../../../components/calls/leadCallsTab';
 import LeadOpportunityTab from '../../../components/opportunities/leadOpportunityTab';
 import LeadTimeline from '../../../components/leads/leadTimeline';
 import LeadTasksTab from '../../../components/tasks/leadTasksTab';
+import LeadWhatsappTab from '../../../components/whatsapp/leadWhatsappTab';
 import { useCalls } from '../../../lib/calls/callContext';
 
 const TABS = [
@@ -204,7 +205,7 @@ function LeadDetail() {
         </div>
       )}
       {tab === 'llamadas' && <LeadCallsTab lead={lead} users={maps.user} />}
-      {tab === 'whatsapp' && <Upcoming text="Las conversaciones de WhatsApp llegan en la Fase 4 (Comunicación)." />}
+      {tab === 'whatsapp' && <LeadWhatsappTab lead={lead} userMap={maps.user} deleted={deleted} />}
       {tab === 'tareas' && <LeadTasksTab lead={lead} users={config.users} userMap={maps.user} deleted={deleted} />}
       {tab === 'oportunidad' && <LeadOpportunityTab lead={lead} users={config.users} onLeadChanged={load} />}
 

@@ -86,9 +86,9 @@ function describe(a) {
     case 'call_completed':
       return `Llamada ${CALL_STATUS[m.status] ?? m.status ?? 'terminada'} · ${duration(m.duration_seconds)}`;
     case 'whatsapp_received':
-      return 'Recibió un WhatsApp';
+      return `WhatsApp recibido${m.preview ? `: "${m.preview}"` : ''}`;
     case 'whatsapp_sent':
-      return 'Envió un WhatsApp';
+      return `WhatsApp enviado${m.preview ? `: "${m.preview}"` : ''}`;
     case 'note_created':
       return 'Agregó una nota';
     case 'task_created':
@@ -227,7 +227,7 @@ export default function LeadTimeline({ leadId, userMap, deleted, onContact }) {
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '0.86rem' }}>
-                    <strong>{a.actor_id ? userMap[a.actor_id]?.name ?? 'Usuario' : 'Sistema'}</strong> · {describe(a)}
+                    <strong>{a.actor_id ? userMap[a.actor_id]?.name ?? 'Usuario' : a.type === 'whatsapp_received' ? 'Cliente' : a.type === 'whatsapp_sent' ? 'Celular de la empresa' : 'Sistema'}</strong> · {describe(a)}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }} title={fullDate(a.created_at)}>
                     {relTime(a.created_at)}
