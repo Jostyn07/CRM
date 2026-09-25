@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import EmojiPicker from './emojiPicker';
 import StickerPicker from './stickerPicker';
+import VoiceMeter from './voiceMeter';
 import { MAX_FILE_BYTES, fileSize, kindFromMime, previewOf } from '../../lib/chat/api';
 import { wrapSelection } from '../../lib/chat/format';
 
@@ -184,10 +185,11 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
 
       {recording ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px' }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--color-danger)', animation: 'pulse 1s infinite' }} />
-          <span style={{ flex: 1, fontSize: '0.88rem' }}>
-            Grabando… {Math.floor(recSeconds / 60)}:{String(recSeconds % 60).padStart(2, '0')}
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--color-danger)', animation: 'pulse 1s infinite', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.88rem', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+            {Math.floor(recSeconds / 60)}:{String(recSeconds % 60).padStart(2, '0')}
           </span>
+          <VoiceMeter stream={recording.stream} />
           <button type="button" className="btn btn-secondary" onClick={() => stopRecording(false)}>
             Cancelar
           </button>

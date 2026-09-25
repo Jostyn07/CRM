@@ -4,7 +4,7 @@
 // documento o sticker; cita del mensaje respondido; reacciones y
 // acciones (responder, reaccionar, editar, guardar sticker).
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EDIT_MINUTES, canEditMessage, fileSize, hora, previewOf, useSignedUrl } from '../../lib/chat/api';
 import { QUICK_REACTIONS, renderFormatted } from '../../lib/chat/format';
 import EmojiPicker from './emojiPicker';
@@ -87,7 +87,22 @@ export default function MessageBubble({
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
   const [editText, setEditText] = useState(m.body ?? '');
+  const hideTimer = useRef(null);
   const mine = m.sender_id === me;
+
+  // Se oculta con una pequeña demora para alcanzar a llegar a los botones
+  const show = () => {
+    clearTimeout(hideTimer.current);
+    setHover(true);
+  };
+  const hideSoon = () => {
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      setHover(false);
+      setPicker(false);
+    }, 450);
+  };
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
 
   if (m.kind === 'system') {
     return (
@@ -106,11 +121,8 @@ export default function MessageBubble({
   return (
     <div
       id={`msg-${m.id}`}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => {
-        setHover(false);
-        setPicker(false);
-      }}
+      onMouseEnter={show}
+      onMouseLeave={() => !picker && hideSoon()}
       style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}
     >
       {showSender && !mine && (
@@ -231,55 +243,71 @@ export default function MessageBubble({
         </div>
       )}
 
-      {/* Acciones al pasar el mouse */}
-      {!readOnly && hover && !editing && (
+      {/* Acciones al pasar el mouse. El contenedor exterior es transparente
+          y queda pegado al mensaje (sin hueco), así el mouse no "se sale"
+          al moverse hacia los botones. */}
+      {!readOnly && (hover || picker) && !editing && (
         <div
+          onMouseEnter={show}
+          onMouseLeave={() => !picker && hideSoon()}
           style={{
             position: 'absolute',
-            top: showSender && !mine ? 16 : -4,
-            [mine ? 'left' : 'right']: -8,
+            top: showSender && !mine ? 14 : -6,
+            [mine ? 'left' : 'right']: 0,
             transform: mine ? 'translateX(-100%)' : 'translateX(100%)',
-            display: 'flex',
-            gap: 2,
-            background: 'var(--color-card-bg, var(--color-bg, #fff))',
-            border: '1px solid var(--color-border)',
-            borderRadius: 999,
-            padding: '2px 4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            [mine ? 'paddingRight' : 'paddingLeft']: 6,
             zIndex: 5,
           }}
         >
-          {QUICK_REACTIONS.slice(0, 3).map((e) => (
-            <button key={e} type="button" title="Reaccionar" onClick={() => onReact?.(m, e, (grouped[e] ?? []).includes(me))} style={actionBtn}>
-              {e}
+          <div
+            style={{
+              display: 'flex',
+              gap: 2,
+              background: 'var(--color-card-bg, var(--color-bg, #fff))',
+              border: '1px solid var(--color-border)',
+              borderRadius: 999,
+              padding: '3px 6px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+              position: 'relative',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {QUICK_REACTIONS.slice(0, 3).map((e) => (
+              <button key={e} type="button" title="Reaccionar" onClick={() => onReact?.(m, e, (grouped[e] ?? []).includes(me))} style={actionBtn}>
+                {e}
+              </button>
+            ))}
+            <button type="button" title="Más reacciones" onClick={() => setPicker((v) => !v)} style={actionBtn}>
+              ☺︎
             </button>
-          ))}
-          <button type="button" title="Más reacciones" onClick={() => setPicker(true)} style={actionBtn}>
-            ☺︎
-          </button>
-          <button type="button" title="Responder" onClick={() => onReply?.(m)} style={actionBtn}>
-            ↩
-          </button>
-          {canEditMessage(m, me) && (
-            <button type="button" title={`Editar (hasta ${EDIT_MINUTES} min)`} onClick={() => onStartEdit?.(m)} style={actionBtn}>
-              ✎
+            <button type="button" title="Responder" onClick={() => onReply?.(m)} style={actionBtn}>
+              ↩
             </button>
-          )}
-          {(m.kind === 'sticker' || m.kind === 'image') && (
-            <button type="button" title="Guardar en mis stickers" onClick={() => onSaveSticker?.(m)} style={actionBtn}>
-              ⭐
-            </button>
-          )}
-          {picker && (
-            <EmojiPicker
-              style={{ top: 32, [mine ? 'right' : 'left']: 0 }}
-              onClose={() => setPicker(false)}
-              onPick={(e) => {
-                setPicker(false);
-                onReact?.(m, e, (grouped[e] ?? []).includes(me));
-              }}
-            />
-          )}
+            {canEditMessage(m, me) && (
+              <button type="button" title={`Editar (hasta ${EDIT_MINUTES} min)`} onClick={() => onStartEdit?.(m)} style={actionBtn}>
+                ✎
+              </button>
+            )}
+            {(m.kind === 'sticker' || m.kind === 'image') && (
+              <button type="button" title="Guardar en mis stickers" onClick={() => onSaveSticker?.(m)} style={actionBtn}>
+                ⭐
+              </button>
+            )}
+            {picker && (
+              <EmojiPicker
+                style={{ top: 36, [mine ? 'right' : 'left']: 0 }}
+                onClose={() => {
+                  setPicker(false);
+                  hideSoon();
+                }}
+                onPick={(e) => {
+                  setPicker(false);
+                  setHover(false);
+                  onReact?.(m, e, (grouped[e] ?? []).includes(me));
+                }}
+              />
+            )}
+          </div>
         </div>
       )}
     </div>
