@@ -16,6 +16,7 @@ export const SETTINGS_TABS = [
   },
   { href: '/settings/embudos', label: 'Embudos', show: (s) => s.can('funnels.manage') },
   { href: '/settings/actividad', label: 'Actividad', show: (s) => s.can('audit.view') },
+  { href: '/settings/chat-auditoria', label: 'Auditoría de chat', show: (s) => s.can('chat.audit') },
   { href: '/settings/numeros', label: 'Números', show: (s) => s.isPlatformOwner || s.can('calls.manage_numbers') },
   { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },

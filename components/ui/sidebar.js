@@ -8,6 +8,7 @@ import { signOut } from '../../lib/supabase/auth';
 import { useSession } from '../../lib/auth/sessionContext';
 import ThemeToggle from './themeToggle';
 import { useMyTaskCounts } from '../../lib/tasks/api';
+import { useChatUnread } from '../../lib/chat/api';
 
 // show(session) decide si el enlace aparece
 const LINKS = [
@@ -15,7 +16,7 @@ const LINKS = [
   { href: '/leads', label: 'Leads', icon: '👥', show: (s) => s.can('leads.view') },
   { href: '/tareas', label: 'Tareas', icon: '✅', show: (s) => !!s.profile?.organization_id, badge: 'tasks' },
   { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('calls.view') || s.can('calls.make') },
-  { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile },
+  { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile?.organization_id, badge: 'chat' },
   { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('opportunities.view') },
   { href: '/imports', label: 'Importar', icon: '📥', show: (s) => s.can('leads.import') },
 ];
@@ -31,6 +32,7 @@ const SETTINGS_LINKS = [
   },
   { href: '/settings/embudos', label: 'Embudos', show: (s) => s.can('funnels.manage') },
   { href: '/settings/actividad', label: 'Actividad', show: (s) => s.can('audit.view') },
+  { href: '/settings/chat-auditoria', label: 'Auditoría de chat', show: (s) => s.can('chat.audit') },
   { href: '/settings/numeros', label: 'Números', show: (s) => s.isPlatformOwner || s.can('calls.manage_numbers') },
   { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('settings.manage') },
@@ -48,6 +50,7 @@ export default function Sidebar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(pathname?.startsWith('/settings'));
   const taskCounts = useMyTaskCounts(profile?.organization_id ? user?.id : null);
+  const chatUnread = useChatUnread(profile?.organization_id ? user?.id : null);
 
   useEffect(() => {
     if (pathname?.startsWith('/settings')) setSettingsOpen(true);
@@ -165,6 +168,27 @@ export default function Sidebar() {
                   }}
                 >
                   {taskCounts.overdue > 0 ? taskCounts.overdue : taskCounts.open}
+                </span>
+              )}
+              {link.badge === 'chat' && chatUnread > 0 && (
+                <span
+                  title={`${chatUnread} mensaje(s) sin leer`}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: 20,
+                    height: 20,
+                    padding: '0 6px',
+                    borderRadius: 999,
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    background: 'var(--color-primary)',
+                  }}
+                >
+                  {chatUnread > 99 ? '99+' : chatUnread}
                 </span>
               )}
             </a>
