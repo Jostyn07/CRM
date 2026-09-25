@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import TaskForm from './taskForm';
+import TaskComments from './taskComments';
 import { fullDate } from '../../lib/leads/format';
 import { PRIORITY, TASK_STATUS, getTaskHistory } from '../../lib/tasks/api';
 
@@ -14,6 +15,8 @@ const ACTION = {
   reopened: 'Reabrió la tarea',
   cancelled: 'Canceló la tarea',
   reassigned: 'Reasignó la tarea',
+  commented: 'Respondió',
+  comment_edited: 'Editó su respuesta',
 };
 
 const FIELD = {
@@ -46,7 +49,14 @@ export default function TaskDetail({ task, users, userMap, onSaved, onClose }) {
 
   return (
     <div style={{ display: 'grid', gap: '1.2rem' }}>
-      <TaskForm task={task} users={users} onSaved={onSaved} onCancel={onClose} />
+      <TaskComments task={task} userMap={userMap} />
+
+      <details>
+        <summary style={{ cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}>Editar tarea</summary>
+        <div style={{ marginTop: '0.8rem' }}>
+          <TaskForm task={task} users={users} onSaved={onSaved} onCancel={onClose} />
+        </div>
+      </details>
 
       <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'grid', gap: 2 }}>
         <span>Creada por {userMap[task.created_by]?.name ?? '—'} · {fullDate(task.created_at)}</span>
@@ -69,7 +79,10 @@ export default function TaskDetail({ task, users, userMap, onSaved, onClose }) {
                   <strong>{userMap[h.user_id]?.name ?? 'Sistema'}</strong> · {ACTION[h.action] ?? h.action}
                   <span style={{ color: 'var(--color-text-muted)' }}> · {fullDate(h.created_at)}</span>
                 </div>
-                {h.action !== 'created' && (
+                {(h.action === 'commented' || h.action === 'comment_edited') && (
+                  <div style={{ color: 'var(--color-text-muted)', whiteSpace: 'pre-wrap' }}>“{h.changes?.body}”</div>
+                )}
+                {!['created', 'commented', 'comment_edited'].includes(h.action) && (
                   <div style={{ color: 'var(--color-text-muted)' }}>
                     {Object.entries(h.changes ?? {}).map(([k, c]) => {
                       const from = show(k, c?.from);

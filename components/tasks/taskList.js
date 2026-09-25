@@ -3,13 +3,23 @@
 // Lista de tareas: casilla para completar, vencidas en rojo, prioridad,
 // responsable y lead. Al hacer clic se abre el detalle.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { trackEvent } from '../../lib/activity/tracker';
-import { PRIORITY, TASK_STATUS, dueLabel, isOpen, isOverdue, notifyTasksChanged, updateTask } from '../../lib/tasks/api';
+import { PRIORITY, TASK_STATUS, dueLabel, getCommentCounts, isOpen, isOverdue, notifyTasksChanged, updateTask } from '../../lib/tasks/api';
 
 export default function TaskList({ tasks, userMap, onOpen, onChanged, showLead = true, showAssignee = true, empty = 'No hay tareas.' }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
+  const [comments, setComments] = useState({});
+  const ids = tasks.map((t) => t.id).join(',');
+
+  useEffect(() => {
+    let alive = true;
+    getCommentCounts(ids ? ids.split(',') : []).then((c) => alive && setComments(c));
+    return () => {
+      alive = false;
+    };
+  }, [ids]);
 
   async function toggle(t) {
     setBusy(t.id);
@@ -88,6 +98,7 @@ export default function TaskList({ tasks, userMap, onOpen, onChanged, showLead =
                     {`${t.lead.first_name} ${t.lead.last_name ?? ''}`.trim()}
                   </a>
                 )}
+                {comments[t.id] > 0 && <span title="Respuestas">💬 {comments[t.id]}</span>}
                 {!isOpen(t) && <span>{TASK_STATUS[t.status]}</span>}
               </div>
             </button>
