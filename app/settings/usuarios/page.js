@@ -29,7 +29,7 @@ export default function UsersPage() {
 }
 
 async function loadAll() {
-  const [p, ub, ur, r, b, perms, up] = await Promise.all([
+  const [p, ub, ur, r, b, perms, up, mu, gr] = await Promise.all([
     supabase.from('profiles').select('id, full_name, email, phone, status, created_at').order('full_name'),
     supabase.from('user_branches').select('user_id, branch_id, is_primary'),
     supabase.from('user_roles').select('user_id, role_id'),
@@ -37,6 +37,8 @@ async function loadAll() {
     supabase.from('branches').select('id, name, status').order('name'),
     supabase.from('permissions').select('key, module, description').order('key'),
     supabase.from('user_permissions').select('user_id, permission_key, effect, scope'),
+    supabase.rpc('get_manageable_user_ids'),
+    supabase.rpc('get_grantable_role_ids'),
   ]);
   const err = [p, ub, ur, r, b, perms].find((x) => x.error)?.error;
   if (err) throw err;
@@ -45,6 +47,8 @@ async function loadAll() {
   const branchesOf = byUser(ub.data);
   const rolesOf = byUser(ur.data);
   const overridesOf = byUser(up.data ?? []);
+  const manageable = new Set((mu.data ?? []).map((x) => (typeof x === 'string' ? x : Object.values(x)[0])));
+  const grantable = new Set((gr.data ?? []).map((x) => (typeof x === 'string' ? x : Object.values(x)[0])));
 
   return {
     users: p.data.map((u) => ({
@@ -53,8 +57,10 @@ async function loadAll() {
       branchIds: (branchesOf[u.id] ?? []).sort((a, b) => b.is_primary - a.is_primary).map((x) => x.branch_id),
       roleIds: (rolesOf[u.id] ?? []).map((x) => x.role_id),
       overrides: overridesOf[u.id] ?? [],
+      canManage: manageable.has(u.id),
     })),
     roles: r.data,
+    grantableRoles: r.data.filter((x) => grantable.has(x.id)),
     branches: b.data,
     permissions: perms.data,
   };
@@ -207,7 +213,7 @@ function Users() {
                   </span>
                 </td>
                 <td style={{ ...cell, textAlign: 'right' }}>
-                  {can('users.manage') && u.id !== me?.id && (
+                  {can('users.manage') && u.id !== me?.id && u.canManage && (
                     <button className="btn btn-secondary" onClick={() => setEditing(u)}>
                       Editar
                     </button>
@@ -306,7 +312,7 @@ function InviteForm({ data, onDone }) {
       <label style={{ display: 'block', marginBottom: '0.7rem' }}>
         <span style={{ fontSize: '0.85rem' }}>Rol</span>
         <select className="input" value={v.role_key} onChange={(e) => setV({ ...v, role_key: e.target.value })}>
-          {data.roles.map((r) => (
+          {data.grantableRoles.map((r) => (
             <option key={r.id} value={r.key}>
               {r.name}
             </option>
@@ -434,7 +440,7 @@ function EditUser({ user, data, onClose, onSaved }) {
         <label>
           <span style={label}>Rol</span>
           <select className="input" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-            {data.roles.map((r) => (
+            {data.grantableRoles.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
               </option>
