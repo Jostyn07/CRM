@@ -18,7 +18,7 @@ import MessageBubble from '../../components/chat/messageBubble';
 import Composer from '../../components/chat/composer';
 import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupDialogs';
 import {
-  EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, kindFromMime,
+  EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
   listConversations, listStickers, markRead, openDirect, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 
@@ -58,6 +58,8 @@ export default function ComunicacionApp() {
   const [messages, setMessages] = useState([]);
   const [extraRefs, setExtraRefs] = useState({}); // mensajes citados que no están cargados
   const [reactions, setReactions] = useState({}); // id → [{user_id, emoji}]
+  const [reads, setReads] = useState({}); // id → [{user_id, read_at}]
+  const [members, setMembers] = useState([]); // [{user_id, joined_at}]
   const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState('');
   const [error, setError] = useState(null);
@@ -106,6 +108,30 @@ export default function ComunicacionApp() {
     });
   }, []);
 
+  // "Visto" de mis mensajes
+  const loadReads = useCallback(
+    async (msgs) => {
+      const mine = msgs.filter((m) => m.sender_id === me && m.kind !== 'system').map((m) => m.id);
+      if (!mine.length) return;
+      const rows = await getReads(mine);
+      setReads((prev) => {
+        const next = { ...prev };
+        for (const id of mine) next[id] = [];
+        for (const r of rows) next[r.message_id].push(r);
+        return next;
+      });
+    },
+    [me]
+  );
+
+  const loadMembers = useCallback(async (id) => {
+    try {
+      setMembers(await groupMembers(id));
+    } catch {
+      setMembers([]);
+    }
+  }, []);
+
   // Citas de mensajes antiguos que no están en la página cargada
   const ensureRefs = useCallback(async (msgs) => {
     const loaded = new Set(msgs.map((m) => m.id));
@@ -122,6 +148,8 @@ export default function ComunicacionApp() {
       setReplyTo(null);
       setError(null);
       setReactions({});
+      setReads({});
+      setMembers([]);
       setExtraRefs({});
       stickToBottom.current = true;
       window.__chatOpenConversation = id;
@@ -133,6 +161,8 @@ export default function ComunicacionApp() {
         setMessages(msgs);
         setHasMore(msgs.length === 50);
         loadReactions(msgs.map((m) => m.id));
+        loadReads(msgs);
+        loadMembers(id);
         ensureRefs(msgs);
         await markRead(id);
         loadConversations();
@@ -141,7 +171,7 @@ export default function ComunicacionApp() {
         setError(e.message);
       }
     },
-    [router, loadConversations, loadReactions, ensureRefs]
+    [router, loadConversations, loadReactions, loadReads, loadMembers, ensureRefs]
   );
 
   useEffect(() => {
@@ -169,11 +199,21 @@ export default function ComunicacionApp() {
             return next;
           });
           if (payload.eventType === 'INSERT' && m.reply_to_id) ensureRefs([m]);
+          if (payload.eventType === 'INSERT' && m.kind === 'system') loadMembers(m.conversation_id);
           if (payload.eventType === 'INSERT' && m.sender_id !== me && document.visibilityState === 'visible') {
             await markRead(m.conversation_id);
           }
         }
         loadConversations();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reads' }, (payload) => {
+        const r = payload.new;
+        if (!r || r.conversation_id !== window.__chatOpenConversation) return;
+        setReads((prev) => {
+          if (!(r.message_id in prev)) return prev; // no es un mensaje mío cargado
+          if (prev[r.message_id].some((x) => x.user_id === r.user_id)) return prev;
+          return { ...prev, [r.message_id]: [...prev[r.message_id], r] };
+        });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reactions' }, (payload) => {
         const id = payload.new?.message_id ?? payload.old?.message_id;
@@ -185,7 +225,7 @@ export default function ComunicacionApp() {
       supabase.removeChannel(channel);
       clearInterval(timer);
     };
-  }, [me, loadConversations, loadReactions, ensureRefs]);
+  }, [me, loadConversations, loadReactions, loadMembers, ensureRefs]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -238,11 +278,13 @@ export default function ComunicacionApp() {
     setHasMore(older.length === 50);
     setMessages((prev) => [...older, ...prev]);
     loadReactions(older.map((m) => m.id));
+    loadReads(older);
     ensureRefs(older);
   }
 
   const addLocal = (m) => {
     stickToBottom.current = true;
+    setReads((prev) => (m.id in prev ? prev : { ...prev, [m.id]: [] }));
     setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
   };
 
@@ -507,6 +549,17 @@ export default function ComunicacionApp() {
                         onSaveEdit={handleEdit}
                         onSaveSticker={handleSaveSticker}
                         stickerSaved={savedStickers.has(m.attachment_path)}
+                        isGroup={isGroup}
+                        readInfo={
+                          m.sender_id === me && m.kind !== 'system'
+                            ? {
+                                recipients: members
+                                  .filter((x) => x.user_id !== me && new Date(x.joined_at) <= new Date(m.created_at))
+                                  .map((x) => x.user_id),
+                                reads: reads[m.id] ?? [],
+                              }
+                            : null
+                        }
                         onJumpTo={jumpTo}
                         onOpenImage={setLightbox}
                       />

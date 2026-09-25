@@ -82,13 +82,14 @@ export default function MessageBubble({
   onCancelEdit,
   onSaveSticker,
   stickerSaved,
+  isGroup,
+  readInfo,
   onJumpTo,
   onOpenImage,
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
   const [editText, setEditText] = useState(m.body ?? '');
-  const [saving, setSaving] = useState(false);
   const hideTimer = useRef(null);
   const mine = m.sender_id === me;
 
@@ -217,35 +218,9 @@ export default function MessageBubble({
         >
           {m.edited_at && <span>editado</span>}
           <span>{hora(m.created_at)}</span>
+          {readInfo && <ReadTicks info={readInfo} userMap={userMap} isGroup={isGroup} mine={mine} sticker={sticker} />}
         </div>
       </div>
-
-      {/* Guardar sticker de un compañero (siempre visible) */}
-      {sticker && !mine && !readOnly && (
-        <button
-          type="button"
-          disabled={stickerSaved || saving}
-          onClick={async () => {
-            setSaving(true);
-            try {
-              await onSaveSticker?.(m);
-            } finally {
-              setSaving(false);
-            }
-          }}
-          style={{
-            marginTop: 2,
-            border: 'none',
-            background: 'transparent',
-            padding: '2px 4px',
-            fontSize: '0.72rem',
-            cursor: stickerSaved ? 'default' : 'pointer',
-            color: stickerSaved ? 'var(--color-text-muted)' : 'var(--color-primary)',
-          }}
-        >
-          {stickerSaved ? '✓ En tus stickers' : saving ? 'Guardando…' : '⭐ Guardar sticker'}
-        </button>
-      )}
 
       {Object.keys(grouped).length > 0 && (
         <div style={{ display: 'flex', gap: 4, marginTop: -4, flexWrap: 'wrap', zIndex: 1 }}>
@@ -318,8 +293,13 @@ export default function MessageBubble({
               </button>
             )}
             {(m.kind === 'image' || (m.kind === 'sticker' && !stickerSaved)) && (
-              <button type="button" title="Guardar en mis stickers" onClick={() => onSaveSticker?.(m)} style={actionBtn}>
-                ⭐
+              <button
+                type="button"
+                title="Guardar en mis stickers"
+                onClick={() => onSaveSticker?.(m)}
+                style={{ ...actionBtn, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+              >
+                ⭐ <span>Guardar sticker</span>
               </button>
             )}
             {picker && (
@@ -340,6 +320,115 @@ export default function MessageBubble({
         </div>
       )}
     </div>
+  );
+}
+
+// ✓ enviado · ✓✓ azul: lo vieron todos. Clic: quién lo vio y cuándo.
+function ReadTicks({ info, userMap, isGroup, sticker }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const readBy = new Map(info.reads.map((r) => [r.user_id, r.read_at]));
+  const seen = info.recipients.filter((u) => readBy.has(u));
+  const pending = info.recipients.filter((u) => !readBy.has(u));
+  const all = info.recipients.length > 0 && pending.length === 0;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const when = (iso) => {
+    const d = new Date(iso);
+    const today = new Date().toDateString() === d.toDateString();
+    return today
+      ? `hoy ${hora(iso)}`
+      : d.toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const summary = all
+    ? isGroup
+      ? 'Visto por todos'
+      : `Visto ${when(readBy.get(info.recipients[0]))}`
+    : isGroup && seen.length
+      ? `Visto por ${seen.length} de ${info.recipients.length}`
+      : 'Enviado · aún no lo han visto';
+
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        type="button"
+        title={summary}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        style={{
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          cursor: 'pointer',
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          letterSpacing: '-3px',
+          paddingRight: 3,
+          lineHeight: 1,
+          color: all ? (sticker ? '#7dd3fc' : '#7dd3fc') : 'inherit',
+          opacity: all ? 1 : 0.85,
+        }}
+      >
+        {all ? '✓✓' : '✓'}
+      </button>
+      {open && (
+        <span
+          className="card"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            bottom: '140%',
+            right: 0,
+            zIndex: 30,
+            minWidth: 230,
+            maxWidth: 280,
+            padding: '0.6rem 0.7rem',
+            color: 'var(--color-text)',
+            textAlign: 'left',
+            fontSize: '0.78rem',
+            letterSpacing: 'normal',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            display: 'block',
+            whiteSpace: 'normal',
+          }}
+        >
+          <strong style={{ display: 'block', marginBottom: 4 }}>Info del mensaje</strong>
+          {seen.length > 0 && (
+            <>
+              <span style={{ display: 'block', color: '#0ea5e9', fontWeight: 600, marginTop: 4 }}>✓✓ Visto por</span>
+              {seen
+                .sort((a, b) => new Date(readBy.get(a)) - new Date(readBy.get(b)))
+                .map((u) => (
+                  <span key={u} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '2px 0' }}>
+                    <span>{userMap[u]?.name ?? 'Usuario'}</span>
+                    <span style={{ color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{when(readBy.get(u))}</span>
+                  </span>
+                ))}
+            </>
+          )}
+          {pending.length > 0 && (
+            <>
+              <span style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 6 }}>✓ Aún no lo ha visto</span>
+              {pending.map((u) => (
+                <span key={u} style={{ display: 'block', padding: '2px 0' }}>
+                  {userMap[u]?.name ?? 'Usuario'}
+                </span>
+              ))}
+            </>
+          )}
+          {info.recipients.length === 0 && <span style={{ color: 'var(--color-text-muted)' }}>Sin destinatarios.</span>}
+        </span>
+      )}
+    </span>
   );
 }
 
