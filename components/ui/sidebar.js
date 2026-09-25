@@ -7,11 +7,13 @@ import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from '../../lib/supabase/auth';
 import { useSession } from '../../lib/auth/sessionContext';
 import ThemeToggle from './themeToggle';
+import { useMyTaskCounts } from '../../lib/tasks/api';
 
 // show(session) decide si el enlace aparece
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊', show: () => true },
   { href: '/leads', label: 'Leads', icon: '👥', show: (s) => s.can('leads.view') },
+  { href: '/tareas', label: 'Tareas', icon: '✅', show: (s) => !!s.profile?.organization_id, badge: 'tasks' },
   { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('calls.view') || s.can('calls.make') },
   { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile },
   { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('opportunities.view') },
@@ -45,6 +47,7 @@ export default function Sidebar() {
   const { user, profile, organization, branches, activeBranchId, setActiveBranchId, isPlatformOwner } = session;
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(pathname?.startsWith('/settings'));
+  const taskCounts = useMyTaskCounts(profile?.organization_id ? user?.id : null);
 
   useEffect(() => {
     if (pathname?.startsWith('/settings')) setSettingsOpen(true);
@@ -143,6 +146,27 @@ export default function Sidebar() {
             >
               <span aria-hidden>{link.icon}</span>
               {link.label}
+              {link.badge === 'tasks' && taskCounts.open > 0 && (
+                <span
+                  title={taskCounts.overdue > 0 ? `${taskCounts.overdue} vencida(s) de ${taskCounts.open} pendiente(s)` : `${taskCounts.open} pendiente(s)`}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: 20,
+                    height: 20,
+                    padding: '0 6px',
+                    borderRadius: 999,
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    background: taskCounts.overdue > 0 ? 'var(--color-danger)' : 'var(--color-primary)',
+                  }}
+                >
+                  {taskCounts.overdue > 0 ? taskCounts.overdue : taskCounts.open}
+                </span>
+              )}
             </a>
           );
         })}

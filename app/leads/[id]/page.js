@@ -16,6 +16,8 @@ import { describeEvent, fullDate, relTime } from '../../../lib/leads/format';
 import { trackEvent, trackTab } from '../../../lib/activity/tracker';
 import LeadCallsTab from '../../../components/calls/leadCallsTab';
 import LeadOpportunityTab from '../../../components/opportunities/leadOpportunityTab';
+import LeadTimeline from '../../../components/leads/leadTimeline';
+import LeadTasksTab from '../../../components/tasks/leadTasksTab';
 import { useCalls } from '../../../lib/calls/callContext';
 
 const TABS = [
@@ -195,10 +197,15 @@ function LeadDetail() {
       </div>
 
       {tab === 'informacion' && <InfoTab lead={lead} config={config} />}
-      {tab === 'actividad' && <ActivityTab leadId={id} maps={maps} canView={can('audit.view')} />}
+      {tab === 'actividad' && (
+        <div style={{ display: 'grid', gap: '1rem' }}>
+          <LeadTimeline leadId={id} userMap={maps.user} deleted={deleted} onContact={load} />
+          {can('audit.view') && <AuditSection leadId={id} maps={maps} />}
+        </div>
+      )}
       {tab === 'llamadas' && <LeadCallsTab lead={lead} users={maps.user} />}
       {tab === 'whatsapp' && <Upcoming text="Las conversaciones de WhatsApp llegan en la Fase 4 (Comunicación)." />}
-      {tab === 'tareas' && <Upcoming text="Las tareas llegan en la Fase 3 (Actividades y tareas)." />}
+      {tab === 'tareas' && <LeadTasksTab lead={lead} users={config.users} userMap={maps.user} deleted={deleted} />}
       {tab === 'oportunidad' && <LeadOpportunityTab lead={lead} users={config.users} onLeadChanged={load} />}
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Editar lead" width={720}>
@@ -266,9 +273,25 @@ function InfoTab({ lead, config }) {
           <Row label="Creado">{fullDate(lead.created_at)}</Row>
           <Row label="Creado por">{config.maps.user[lead.created_by]?.name}</Row>
           <Row label="Última modificación">{fullDate(lead.updated_at)}</Row>
-          <Row label="Última actividad">{relTime(lead.last_activity_at)}</Row>
+          <Row label="Último contacto">{lead.last_activity_at ? `${relTime(lead.last_activity_at)} · ${fullDate(lead.last_activity_at)}` : 'Sin contacto todavía'}</Row>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Auditoría detallada (quién abrió, editó, cambió de pestaña…): solo con audit.view
+function AuditSection({ leadId, maps }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="card" style={{ padding: 0 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{ width: '100%', textAlign: 'left', padding: '0.7rem 0.9rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', color: 'inherit' }}
+      >
+        {open ? '▾' : '▸'} Auditoría detallada
+      </button>
+      {open && <ActivityTab leadId={leadId} maps={maps} canView />}
     </div>
   );
 }

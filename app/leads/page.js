@@ -22,7 +22,7 @@ const SORTS = [
   { value: 'created_desc', label: 'Más recientes' },
   { value: 'created_asc', label: 'Más antiguos' },
   { value: 'name_asc', label: 'Nombre (A-Z)' },
-  { value: 'activity_desc', label: 'Última actividad' },
+  { value: 'activity_desc', label: 'Último contacto' },
 ];
 
 export default function LeadsPage() {
@@ -241,7 +241,7 @@ function LeadsList() {
               <th style={th}>Fuente</th>
               <th style={th}>Responsable</th>
               <th style={th}>Etiquetas</th>
-              <th style={th}>Última actividad</th>
+              <th style={th}>Último contacto</th>
               <th style={th}>Creado</th>
             </tr>
           </thead>
@@ -289,7 +289,7 @@ function LeadsList() {
                   <td style={td}>
                     <TagChips tagIds={r.tag_ids} tagMap={config.maps.tag} />
                   </td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{relTime(r.last_activity_at)}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.last_activity_at ? relTime(r.last_activity_at) : <span style={{ color: 'var(--color-text-muted)' }}>Sin contacto</span>}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleDateString('es-CO')}</td>
                 </tr>
               ))}
