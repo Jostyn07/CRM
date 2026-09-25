@@ -9,8 +9,9 @@ import { useCallback, useEffect, useState } from 'react';
 import RequirePermission from '../../../components/ui/requirePermission';
 import { SettingsHeader, errorText } from '../../../components/settings/settingsTabs';
 import { useOrgUsers } from '../../../lib/tasks/useOrgUsers';
-import { auditConversations, auditMessages, diaSeparador, fechaCorta, hora } from '../../../lib/chat/api';
+import { auditConversations, auditMessages, diaSeparador, fechaCorta } from '../../../lib/chat/api';
 import { fullDate } from '../../../lib/leads/format';
+import MessageBubble from '../../../components/chat/messageBubble';
 
 export default function ChatAuditPage() {
   return (
@@ -53,6 +54,7 @@ function ChatAudit() {
   }
 
   const names = (ids) => (ids ?? []).map((id) => userMap[id]?.name ?? 'Usuario').join(' ↔ ');
+  const label = (c) => (c.kind === 'group' ? `👥 ${c.title}` : names(c.member_ids));
   let lastDay = null;
 
   return (
@@ -99,7 +101,7 @@ function ChatAudit() {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: '0.85rem' }}>
-                  <strong>{names(c.member_ids)}</strong>
+                  <strong>{label(c)}</strong>
                   <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{fechaCorta(c.last_message_at)}</span>
                 </div>
                 <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -118,43 +120,37 @@ function ChatAudit() {
           ) : (
             <>
               <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: 6 }}>
-                Solo lectura · {names(selected.member_ids)}
+                Solo lectura · {label(selected)}{selected.kind === 'group' ? ` · ${names(selected.member_ids)}` : ''}
               </div>
               {messages.map((m) => {
                 const day = diaSeparador(m.created_at);
                 const showDay = day !== lastDay;
                 lastDay = day;
-                const left = m.sender_id === selected.member_ids?.[0];
+                const byId = Object.fromEntries(messages.map((x) => [x.id, x]));
                 return (
                   <div key={m.id} style={{ display: 'contents' }}>
                     {showDay && (
                       <div style={{ alignSelf: 'center', fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '0.5rem 0', textTransform: 'capitalize' }}>{day}</div>
                     )}
-                    <div
-                      style={{
-                        alignSelf: left ? 'flex-start' : 'flex-end',
-                        maxWidth: '72%',
-                        padding: '0.5rem 0.75rem',
-                        borderRadius: 12,
-                        background: left ? 'var(--color-active-bg)' : 'var(--color-border)',
-                        fontSize: '0.87rem',
-                      }}
-                    >
-                      <div style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: 2 }}>{userMap[m.sender_id]?.name ?? 'Usuario'}</div>
-                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
-                      {Array.isArray(m.previous_versions) && m.previous_versions.length > 0 && (
-                        <details style={{ marginTop: 4, fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                          <summary style={{ cursor: 'pointer' }}>Editado · ver versiones anteriores ({m.previous_versions.length})</summary>
-                          {m.previous_versions.map((v, i) => (
-                            <div key={i} style={{ marginTop: 4, paddingLeft: 8, borderLeft: '2px solid var(--color-border)', whiteSpace: 'pre-wrap' }}>
-                              {v.body}
-                              <div style={{ fontSize: '0.68rem' }}>reemplazado {fullDate(v.edited_at)}</div>
-                            </div>
-                          ))}
-                        </details>
-                      )}
-                      <div style={{ fontSize: '0.66rem', color: 'var(--color-text-muted)', textAlign: 'right' }}>{hora(m.created_at)}</div>
-                    </div>
+                    <MessageBubble
+                      m={m}
+                      me={selected.member_ids?.[0]}
+                      userMap={userMap}
+                      showSender
+                      readOnly
+                      replyTo={m.reply_to_id ? byId[m.reply_to_id] : null}
+                    />
+                    {Array.isArray(m.previous_versions) && m.previous_versions.length > 0 && (
+                      <details style={{ alignSelf: m.sender_id === selected.member_ids?.[0] ? 'flex-end' : 'flex-start', fontSize: '0.75rem', color: 'var(--color-text-muted)', maxWidth: '72%' }}>
+                        <summary style={{ cursor: 'pointer' }}>Editado · ver versiones anteriores ({m.previous_versions.length})</summary>
+                        {m.previous_versions.map((v, i) => (
+                          <div key={i} style={{ marginTop: 4, paddingLeft: 8, borderLeft: '2px solid var(--color-border)', whiteSpace: 'pre-wrap' }}>
+                            {v.body}
+                            <div style={{ fontSize: '0.68rem' }}>reemplazado {fullDate(v.edited_at)}</div>
+                          </div>
+                        ))}
+                      </details>
+                    )}
                   </div>
                 );
               })}
