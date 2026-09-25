@@ -19,7 +19,7 @@ import Composer from '../../components/chat/composer';
 import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupDialogs';
 import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, kindFromMime,
-  listConversations, markRead, openDirect, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  listConversations, listStickers, markRead, openDirect, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 
 function Avatar({ name, size = 34, group }) {
@@ -68,6 +68,7 @@ export default function ComunicacionApp() {
   const [groupInfo, setGroupInfo] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [toast, setToast] = useState(null);
+  const [savedStickers, setSavedStickers] = useState(() => new Set());
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
   const [, setTick] = useState(0);
   const endRef = useRef(null);
@@ -84,6 +85,16 @@ export default function ComunicacionApp() {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Stickers que ya tengo guardados (para marcar "Guardado")
+  const loadSaved = useCallback(() => {
+    listStickers()
+      .then((list) => setSavedStickers(new Set(list.map((x) => x.path))))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadSaved();
+  }, [loadSaved]);
 
   const loadReactions = useCallback(async (ids) => {
     const rows = await getReactions(ids);
@@ -291,6 +302,8 @@ export default function ComunicacionApp() {
   async function handleSaveSticker(m) {
     try {
       await saveAsSticker(orgId, me, m.attachment_path);
+      setSavedStickers((prev) => new Set(prev).add(m.attachment_path));
+      loadSaved();
       setToast('Guardado en tus stickers ⭐');
       setTimeout(() => setToast(null), 2500);
     } catch (e) {
@@ -493,6 +506,7 @@ export default function ComunicacionApp() {
                         onCancelEdit={() => setEditId(null)}
                         onSaveEdit={handleEdit}
                         onSaveSticker={handleSaveSticker}
+                        stickerSaved={savedStickers.has(m.attachment_path)}
                         onJumpTo={jumpTo}
                         onOpenImage={setLightbox}
                       />

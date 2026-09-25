@@ -81,12 +81,14 @@ export default function MessageBubble({
   onSaveEdit,
   onCancelEdit,
   onSaveSticker,
+  stickerSaved,
   onJumpTo,
   onOpenImage,
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
   const [editText, setEditText] = useState(m.body ?? '');
+  const [saving, setSaving] = useState(false);
   const hideTimer = useRef(null);
   const mine = m.sender_id === me;
 
@@ -218,6 +220,33 @@ export default function MessageBubble({
         </div>
       </div>
 
+      {/* Guardar sticker de un compañero (siempre visible) */}
+      {sticker && !mine && !readOnly && (
+        <button
+          type="button"
+          disabled={stickerSaved || saving}
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await onSaveSticker?.(m);
+            } finally {
+              setSaving(false);
+            }
+          }}
+          style={{
+            marginTop: 2,
+            border: 'none',
+            background: 'transparent',
+            padding: '2px 4px',
+            fontSize: '0.72rem',
+            cursor: stickerSaved ? 'default' : 'pointer',
+            color: stickerSaved ? 'var(--color-text-muted)' : 'var(--color-primary)',
+          }}
+        >
+          {stickerSaved ? '✓ En tus stickers' : saving ? 'Guardando…' : '⭐ Guardar sticker'}
+        </button>
+      )}
+
       {Object.keys(grouped).length > 0 && (
         <div style={{ display: 'flex', gap: 4, marginTop: -4, flexWrap: 'wrap', zIndex: 1 }}>
           {Object.entries(grouped).map(([emoji, users]) => (
@@ -288,7 +317,7 @@ export default function MessageBubble({
                 ✎
               </button>
             )}
-            {(m.kind === 'sticker' || m.kind === 'image') && (
+            {(m.kind === 'image' || (m.kind === 'sticker' && !stickerSaved)) && (
               <button type="button" title="Guardar en mis stickers" onClick={() => onSaveSticker?.(m)} style={actionBtn}>
                 ⭐
               </button>
