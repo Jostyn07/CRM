@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import WaThread from './waThread';
+import WaHistoryOverlay from './waHistoryOverlay';
 import { useSession } from '../../lib/auth/sessionContext';
 import { formatChat, getLeadConversations, listChannels, startConversation } from '../../lib/whatsapp/api';
 
@@ -16,6 +17,8 @@ export default function LeadWhatsappTab({ lead, userMap, deleted }) {
   const [channel, setChannel] = useState('');
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
+  const [history, setHistory] = useState(false);
+  const closeHistory = useCallback(() => setHistory(false), []);
 
   const load = useCallback(async () => {
     try {
@@ -60,9 +63,17 @@ export default function LeadWhatsappTab({ lead, userMap, deleted }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '0.6rem 0.9rem', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
         <strong style={{ fontSize: '0.92rem' }}>WhatsApp {lead.phone_normalized ? `· ${formatChat(lead.phone_normalized)}` : ''}</strong>
         <span style={{ flex: 1 }} />
+        {active && (
+          <button className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: '0.78rem' }} onClick={() => setHistory(true)} title="Ver la conversación completa en Wazzup">
+            🕘 Historial
+          </button>
+        )}
         {convs.length > 1 &&
           convs.map((c) => (
-            <button key={c.id} className={`btn ${c.id === active ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '3px 10px', fontSize: '0.78rem' }} onClick={() => setActive(c.id)}>
+            <button key={c.id} className={`btn ${c.id === active ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '3px 10px', fontSize: '0.78rem' }} onClick={() => {
+                setActive(c.id);
+                setHistory(false);
+              }}>
               {chName(c.channel_id)}
             </button>
           ))}
@@ -85,8 +96,9 @@ export default function LeadWhatsappTab({ lead, userMap, deleted }) {
       </div>
       {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', padding: '0.5rem 0.9rem' }}>{error}</p>}
       {active ? (
-        <div style={{ height: '60vh' }}>
+        <div style={{ height: '60vh', position: 'relative' }}>
           <WaThread conversationId={active} orgId={profile.organization_id} userMap={userMap} canSend={can('whatsapp.send') && !deleted} />
+          {history && <WaHistoryOverlay conversationId={active} onClose={closeHistory} />}
         </div>
       ) : (
         <p style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>

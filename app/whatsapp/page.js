@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import RequirePermission from '../../components/ui/requirePermission';
 import WaThread from '../../components/whatsapp/waThread';
+import WaHistoryOverlay from '../../components/whatsapp/waHistoryOverlay';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
@@ -36,6 +37,7 @@ function Inbox() {
   const [q, setQ] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [error, setError] = useState(null);
+  const [history, setHistory] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -66,6 +68,7 @@ function Inbox() {
 
   function open(id) {
     setSelected(id);
+    setHistory(false);
     const url = new URL(window.location.href);
     url.searchParams.set('c', id);
     router.replace(url.pathname + url.search, { scroll: false });
@@ -81,6 +84,7 @@ function Inbox() {
     );
   }, [convs, q, onlyUnread]);
 
+  const closeHistory = useCallback(() => setHistory(false), []);
   const conv = convs?.find((c) => c.id === selected);
   const chName = (id) => channels.find((c) => c.id === id)?.name;
 
@@ -182,14 +186,18 @@ function Inbox() {
                     </div>
                   )}
                 </div>
+                <button className="btn btn-secondary" onClick={() => setHistory(true)} title="Ver la conversación completa en Wazzup">
+                  🕘 Historial
+                </button>
                 {conv?.lead_id && (
                   <a className="btn btn-secondary" href={`/leads/${conv.lead_id}`}>
                     Ver lead
                   </a>
                 )}
               </div>
-              <div style={{ flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                 <WaThread conversationId={selected} orgId={profile.organization_id} userMap={userMap} canSend={can('whatsapp.send')} />
+                {history && <WaHistoryOverlay conversationId={selected} onClose={closeHistory} />}
               </div>
             </>
           )}
