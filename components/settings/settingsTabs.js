@@ -19,6 +19,7 @@ export const SETTINGS_TABS = [
   { href: '/settings/chat-auditoria', label: 'Auditoría de chat', show: (s) => s.can('chat.audit') },
   { href: '/settings/numeros', label: 'Números', show: (s) => s.isPlatformOwner || s.can('calls.manage_numbers') },
   { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
+  { href: '/settings/automatizaciones', label: 'Automatizaciones', show: (s) => s.can('automations.manage') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
   { href: '/settings', label: 'Mi cuenta', show: () => true },

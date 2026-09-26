@@ -7,6 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from '../../lib/supabase/auth';
 import { useSession } from '../../lib/auth/sessionContext';
 import ThemeToggle from './themeToggle';
+import NotificationsBell from './notificationsBell';
 import { useMyTaskCounts } from '../../lib/tasks/api';
 import { useChatUnread } from '../../lib/chat/api';
 import { useWaUnread } from '../../lib/whatsapp/api';
@@ -38,6 +39,7 @@ const SETTINGS_LINKS = [
   { href: '/settings/chat-auditoria', label: 'Auditoría de chat', show: (s) => s.can('chat.audit') },
   { href: '/settings/numeros', label: 'Números', show: (s) => s.isPlatformOwner || s.can('calls.manage_numbers') },
   { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
+  { href: '/settings/automatizaciones', label: 'Automatizaciones', show: (s) => s.can('automations.manage') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
   { href: '/settings', label: 'Mi cuenta', show: () => true },
@@ -103,7 +105,10 @@ export default function Sidebar() {
             {organization?.name ?? (isPlatformOwner ? 'Platform Owner' : '')}
           </div>
         </div>
-        <ThemeToggle />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {profile?.organization_id && <NotificationsBell userId={user.id} />}
+          <ThemeToggle />
+        </div>
       </div>
 
       {branches.length > 1 && (
