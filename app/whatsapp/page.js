@@ -7,13 +7,14 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import RequirePermission from '../../components/ui/requirePermission';
 import WaThread from '../../components/whatsapp/waThread';
-import WaHistoryOverlay from '../../components/whatsapp/waHistoryOverlay';
+import WazzupFrame from '../../components/whatsapp/wazzupFrame';
+import WaModeToggle from '../../components/whatsapp/waModeToggle';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
 import { fechaCorta } from '../../lib/chat/api';
-import { formatChat, listChannels, listConversations } from '../../lib/whatsapp/api';
+import { formatChat, listChannels, listConversations, useWaMode } from '../../lib/whatsapp/api';
 
 export default function WhatsappPage() {
   return (
@@ -26,7 +27,9 @@ export default function WhatsappPage() {
 }
 
 function Inbox() {
-  const { user, profile, can } = useSession();
+  const { user, profile, can, scopeOf } = useSession();
+  const [mode, setMode] = useWaMode();
+  const canGlobal = scopeOf('whatsapp.view') === 'organization';
   const { userMap } = useOrgUsers();
   const router = useRouter();
   const params = useSearchParams();
@@ -37,7 +40,6 @@ function Inbox() {
   const [q, setQ] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [error, setError] = useState(null);
-  const [history, setHistory] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -68,7 +70,6 @@ function Inbox() {
 
   function open(id) {
     setSelected(id);
-    setHistory(false);
     const url = new URL(window.location.href);
     url.searchParams.set('c', id);
     router.replace(url.pathname + url.search, { scroll: false });
@@ -84,7 +85,6 @@ function Inbox() {
     );
   }, [convs, q, onlyUnread]);
 
-  const closeHistory = useCallback(() => setHistory(false), []);
   const conv = convs?.find((c) => c.id === selected);
   const chName = (id) => channels.find((c) => c.id === id)?.name;
 
@@ -95,6 +95,13 @@ function Inbox() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: '1rem', flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: '1.3rem' }}>WhatsApp</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <WaModeToggle
+            mode={mode}
+            onChange={(m) => {
+              setMode(m);
+              if (selected === '__wazzup__' && m === 'app') setSelected(null);
+            }}
+          />
           {channels.length > 1 && (
             <select className="input" style={{ width: 220 }} value={channel} onChange={(e) => setChannel(e.target.value)}>
               <option value="">Todos mis números</option>
@@ -115,8 +122,13 @@ function Inbox() {
 
       <div className="card" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', height: '74vh', padding: 0, overflow: 'hidden' }}>
         <div style={{ borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ padding: '0.7rem', borderBottom: '1px solid var(--color-border)' }}>
+          <div style={{ padding: '0.7rem', borderBottom: '1px solid var(--color-border)', display: 'grid', gap: 6 }}>
             <input className="input" placeholder="Buscar por nombre o número…" value={q} onChange={(e) => setQ(e.target.value)} />
+            {mode === 'wazzup' && canGlobal && (
+              <button className={`btn ${selected === '__wazzup__' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelected('__wazzup__')}>
+                🟩 Bandeja completa de Wazzup
+              </button>
+            )}
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {!convs ? (
@@ -173,7 +185,12 @@ function Inbox() {
 
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
           {!selected ? (
-            <div style={{ margin: 'auto', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Elige una conversación.</div>
+            <div style={{ margin: 'auto', color: 'var(--color-text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '1rem' }}>
+              Elige una conversación.
+              {mode === 'wazzup' && <div style={{ fontSize: '0.8rem', marginTop: 6 }}>Se abrirá en la ventana de Wazzup, con todo su historial.</div>}
+            </div>
+          ) : selected === '__wazzup__' ? (
+            <WazzupFrame global />
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.7rem 1rem', borderBottom: '1px solid var(--color-border)' }}>
@@ -186,9 +203,6 @@ function Inbox() {
                     </div>
                   )}
                 </div>
-                <button className="btn btn-secondary" onClick={() => setHistory(true)} title="Ver la conversación completa en Wazzup">
-                  🕘 Historial
-                </button>
                 {conv?.lead_id && (
                   <a className="btn btn-secondary" href={`/leads/${conv.lead_id}`}>
                     Ver lead
@@ -196,8 +210,11 @@ function Inbox() {
                 )}
               </div>
               <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                <WaThread conversationId={selected} orgId={profile.organization_id} userMap={userMap} canSend={can('whatsapp.send')} />
-                {history && <WaHistoryOverlay conversationId={selected} onClose={closeHistory} />}
+                {mode === 'wazzup' ? (
+                  <WazzupFrame conversationId={selected} />
+                ) : (
+                  <WaThread conversationId={selected} orgId={profile.organization_id} userMap={userMap} canSend={can('whatsapp.send')} />
+                )}
               </div>
             </>
           )}
