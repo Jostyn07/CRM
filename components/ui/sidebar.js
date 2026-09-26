@@ -13,12 +13,13 @@ import { useWaUnread } from '../../lib/whatsapp/api';
 
 // show(session) decide si el enlace aparece
 const LINKS = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊', show: () => true },
+  { href: '/dashboard', label: 'Dashboard', icon: '📊', show: (s) => s.can('reports.view') },
   { href: '/leads', label: 'Leads', icon: '👥', show: (s) => s.can('leads.view') },
   { href: '/tareas', label: 'Tareas', icon: '✅', show: (s) => !!s.profile?.organization_id, badge: 'tasks' },
   { href: '/llamadas', label: 'Llamadas', icon: '📞', show: (s) => s.can('calls.view') || s.can('calls.make') },
   { href: '/whatsapp', label: 'WhatsApp', icon: '🟢', show: (s) => s.can('whatsapp.view'), badge: 'wa' },
   { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile?.organization_id, badge: 'chat' },
+  { href: '/reportes', label: 'Reportes', icon: '📈', show: (s) => s.can('reports.view') },
   { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('opportunities.view') },
   { href: '/imports', label: 'Importar', icon: '📥', show: (s) => s.can('leads.import') },
 ];
