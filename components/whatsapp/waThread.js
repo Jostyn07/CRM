@@ -11,6 +11,7 @@ import { trackEvent } from '../../lib/activity/tracker';
 import { renderFormatted } from '../../lib/chat/format';
 import { diaSeparador, hora } from '../../lib/chat/api';
 import EmojiPicker from '../chat/emojiPicker';
+import WaClientBar from '../clients/waClientBar';
 import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
 import { WA_MAX_BYTES, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
 
@@ -147,6 +148,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height, minHeight: 0 }}>
+      <WaClientBar conversationId={conversationId} />
       <div
         style={{ flex: 1, overflowY: 'auto', padding: '0.8rem 1.2rem', display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--color-bg, transparent)' }}
         onScroll={(e) => {

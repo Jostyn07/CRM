@@ -20,6 +20,7 @@ import LeadTimeline from '../../../components/leads/leadTimeline';
 import LeadTasksTab from '../../../components/tasks/leadTasksTab';
 import LeadWhatsappTab from '../../../components/whatsapp/leadWhatsappTab';
 import LeadAiPanel from '../../../components/ai/leadAiPanel';
+import LeadClientTab from '../../../components/clients/leadClientTab';
 import { useCalls } from '../../../lib/calls/callContext';
 
 const TABS = [
@@ -29,6 +30,7 @@ const TABS = [
   { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'tareas', label: 'Tareas' },
   { key: 'oportunidad', label: 'Oportunidad' },
+  { key: 'cliente', label: 'Cliente', perm: 'clients.view' },
 ];
 
 export default function LeadDetailPage() {
@@ -186,7 +188,7 @@ function LeadDetail() {
 
       {/* Pestañas */}
       <div className="tabs-bar" role="tablist">
-        {TABS.map((t) => (
+        {TABS.filter((t) => !t.perm || can(t.perm)).map((t) => (
           <button
             key={t.key}
             role="tab"
@@ -210,6 +212,7 @@ function LeadDetail() {
       {tab === 'llamadas' && <LeadCallsTab lead={lead} users={maps.user} />}
       {tab === 'whatsapp' && <LeadWhatsappTab lead={lead} userMap={maps.user} deleted={deleted} />}
       {tab === 'tareas' && <LeadTasksTab lead={lead} users={config.users} userMap={maps.user} deleted={deleted} />}
+      {tab === 'cliente' && can('clients.view') && <LeadClientTab lead={lead} />}
       {tab === 'oportunidad' && <LeadOpportunityTab lead={lead} users={config.users} onLeadChanged={load} />}
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Editar lead" width={720}>

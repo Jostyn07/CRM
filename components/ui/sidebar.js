@@ -21,6 +21,7 @@ const LINKS = [
   { href: '/whatsapp', label: 'WhatsApp', icon: '🟢', show: (s) => s.can('whatsapp.view'), badge: 'wa' },
   { href: '/comunicacion', label: 'Comunicación', icon: '💬', show: (s) => !!s.profile?.organization_id, badge: 'chat' },
   { href: '/reportes', label: 'Reportes', icon: '📈', show: (s) => s.can('reports.view') },
+  { href: '/clientes', label: 'Clientes', icon: '🧾', show: (s) => s.can('clients.view') },
   { href: '/funnels', label: 'Embudos', icon: '🔀', show: (s) => s.can('opportunities.view') },
   { href: '/imports', label: 'Importar', icon: '📥', show: (s) => s.can('leads.import') },
 ];
