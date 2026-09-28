@@ -107,7 +107,7 @@ export function ReportFilters({ tz, value, onChange, branches, users, showBranch
 // ---------------- Tarjeta de indicador
 export function StatTile({ metric, value, sub, period, tone, href }) {
   const body = (
-    <div className="card" style={{ padding: '0.85rem 1rem', display: 'grid', gap: 4, height: '100%' }}>
+    <div className="card dashboard-stat-card" style={{ padding: '0.85rem 1rem', display: 'grid', gap: 4, height: '100%' }}>
       <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
         {METRICS[metric]?.label ?? metric}
         <InfoTip metric={metric} period={period} />
@@ -126,7 +126,7 @@ export function StatTile({ metric, value, sub, period, tone, href }) {
 }
 
 export function TileGrid({ children }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>{children}</div>;
+  return <div className="dashboard-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>{children}</div>;
 }
 
 // ---------------- Barras por día (una serie) con tooltip
