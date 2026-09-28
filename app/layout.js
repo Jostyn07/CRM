@@ -13,8 +13,8 @@ import { CallProvider } from '../lib/calls/callContext';
 import CallUI from '../components/calls/callUI';
 
 export const metadata = {
-  title: 'Plataforma de Leads',
-  description: 'Gestión de leads por organización y sucursal',
+  title: 'Xiris',
+  description: 'Xiris — gestión de leads por organización y sucursal',
 };
 
 // Se ejecuta antes del primer paint (evita el "flash" de tema oscuro
