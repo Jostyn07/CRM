@@ -3,6 +3,7 @@
 // Editor de una automatización: Cuando (disparador) → Si (condiciones) → Hacer (acciones).
 
 import { useMemo, useState } from 'react';
+import { INTENTS, URGENCY } from '../../lib/ai/api';
 import { ACTIONS, PLACEHOLDERS, PRIORITIES, RECIPIENTS, TRIGGERS, newAction, saveRule } from '../../lib/automations/api';
 
 const box = { border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: '0.85rem', marginBottom: '0.85rem' };
@@ -201,7 +202,23 @@ export default function RuleEditor({ initial, config, fconfig, branchOptions, ca
               </select>
             </div>
           )}
-          {['whatsapp_received', 'call_ended'].includes(rule.trigger) && (
+          {rule.trigger === 'message_classified' && (
+            <div style={{ flex: '1 1 100%' }}>
+              <label style={label}>Intención (vacío = cualquiera)</label>
+              <Chips
+                options={Object.entries(INTENTS).map(([id, v]) => ({ id, name: v.label }))}
+                value={rule.trigger_config.intents ?? []}
+                onChange={(v) => setCfg({ intents: v })}
+              />
+              <label style={{ ...label, marginTop: 8 }}>Urgencia (vacío = cualquiera)</label>
+              <Chips
+                options={Object.entries(URGENCY).map(([id, name]) => ({ id, name }))}
+                value={rule.trigger_config.urgencies ?? []}
+                onChange={(v) => setCfg({ urgencies: v })}
+              />
+            </div>
+          )}
+          {['whatsapp_received', 'call_ended', 'message_classified'].includes(rule.trigger) && (
             <div>
               <label style={label}>No repetir por lead antes de (min)</label>
               <input className="input" type="number" min={0} max={10080} style={{ width: 150 }} placeholder={rule.trigger === 'whatsapp_received' ? '60' : '0'} value={rule.trigger_config.cooldown_minutes ?? ''} onChange={(e) => setCfg({ cooldown_minutes: e.target.value === '' ? undefined : Number(e.target.value) })} />

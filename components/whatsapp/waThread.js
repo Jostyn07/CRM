@@ -11,6 +11,7 @@ import { trackEvent } from '../../lib/activity/tracker';
 import { renderFormatted } from '../../lib/chat/format';
 import { diaSeparador, hora } from '../../lib/chat/api';
 import EmojiPicker from '../chat/emojiPicker';
+import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
 import { WA_MAX_BYTES, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
 
 function Media({ m }) {
@@ -36,7 +37,9 @@ function Ticks({ status, error }) {
 }
 
 export default function WaThread({ conversationId, orgId, userMap, canSend = true, height = '100%' }) {
-  const { user } = useSession();
+  const { user, can } = useSession();
+  const canAi = can('ai.reply');
+  const [ai, setAi] = useState(null); // { loading, replies, error }
   const [messages, setMessages] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [text, setText] = useState('');
@@ -206,6 +209,15 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                   )}
                   {!m.body && m.kind === 'unsupported' && <em style={{ opacity: 0.8 }}>Tipo de mensaje no compatible</em>}
                   <div style={{ fontSize: '0.66rem', opacity: 0.8, textAlign: 'right', marginTop: 2, display: 'flex', gap: 6, justifyContent: 'flex-end', padding: m.kind === 'text' ? 0 : '0 6px 2px' }}>
+                    {!out && m.ai_intent && INTENTS[m.ai_intent] && m.ai_intent !== 'saludo' && m.ai_intent !== 'otro' && (
+                      <span
+                        title={`Clasificado por IA · urgencia ${URGENCY[m.ai_urgency] ?? ''}`}
+                        style={{ padding: '0 6px', borderRadius: 999, color: '#fff', background: INTENTS[m.ai_intent].color, opacity: 0.9 }}
+                      >
+                        {m.ai_urgency === 'alta' ? '🔴 ' : ''}
+                        {INTENTS[m.ai_intent].label}
+                      </span>
+                    )}
                     {m.is_edited && <span>editado</span>}
                     <span>{hora(m.created_at)}</span>
                     {out && <Ticks status={m.status} error={m.error} />}
@@ -248,7 +260,51 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
               ))}
             </div>
           )}
+          {ai && (
+            <div style={{ marginBottom: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid #8b5cf6', background: 'var(--color-active-bg)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                <span>✨ Respuestas sugeridas · elige una para editarla antes de enviar</span>
+                <button style={{ ...iconBtn, fontSize: '0.8rem', padding: 0 }} onClick={() => setAi(null)}>
+                  ×
+                </button>
+              </div>
+              {ai.loading && <div style={{ fontSize: '0.82rem' }}>Pensando…</div>}
+              {ai.error && <div style={{ fontSize: '0.82rem', color: 'var(--color-danger)' }}>{ai.error}</div>}
+              {(ai.replies ?? []).map((r, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setText(r);
+                    setAi(null);
+                    trackEvent('ai.reply_used', { entityType: 'wa_conversations', entityId: conversationId });
+                    setTimeout(() => taRef.current?.focus(), 0);
+                  }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', margin: '4px 0', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg, #fff)', color: 'var(--color-text)', fontSize: '0.84rem', cursor: 'pointer' }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
+            {canAi && (
+              <button
+                style={iconBtn}
+                title="Sugerir respuestas con IA (usa lo que escribiste como indicación)"
+                disabled={ai?.loading}
+                onClick={async () => {
+                  setAi({ loading: true });
+                  try {
+                    const r = await aiReply(conversationId, text.trim() ? { instruction: text.trim() } : {});
+                    setAi({ replies: r.replies ?? [] });
+                  } catch (e) {
+                    setAi({ error: e.message });
+                  }
+                }}
+              >
+                ✨
+              </button>
+            )}
             <div style={{ position: 'relative' }}>
               <button style={iconBtn} title="Emojis" onClick={() => setEmoji((v) => !v)}>
                 😊

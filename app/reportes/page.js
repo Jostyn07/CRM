@@ -13,6 +13,7 @@ import { useSession } from '../../lib/auth/sessionContext';
 import { useLeadConfig } from '../../lib/leads/useLeadConfig';
 import { useFunnelConfig } from '../../lib/opportunities/api';
 import { trackEvent, trackTab } from '../../lib/activity/tracker';
+import AiAnalysis from '../../components/ai/aiAnalysis';
 import {
   GOAL_METRICS, getBreakdown, getDaily, getFunnel, getKpis, getRanking, listGoals, money, num, pct, presetRange, saveGoal,
   saveOrgTimezone, shortDate, todayIn, useOrgTimezone,
@@ -24,6 +25,7 @@ const TABS = [
   { key: 'oportunidades', label: 'Oportunidades' },
   { key: 'equipo', label: 'Equipo' },
   { key: 'metas', label: 'Metas', perm: 'goals.manage' },
+  { key: 'ia', label: '✨ Análisis IA', perm: 'ai.analytics' },
 ];
 
 const RESULT_LABEL = {
@@ -271,6 +273,8 @@ function Reports() {
           </p>
           <RankingTable rows={ranking} userMap={userMap} me={user?.id} currency={cur} />
         </div>
+      ) : tab === 'ia' ? (
+        <AiAnalysis filters={f} period={period} />
       ) : (
         <GoalsEditor tz={tz} users={config.users} userMap={userMap} me={user?.id} goalsScope={scopeOf('goals.manage')} myBranches={myBranches} />
       )}

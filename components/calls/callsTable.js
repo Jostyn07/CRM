@@ -8,6 +8,7 @@ import { useSession } from '../../lib/auth/sessionContext';
 import { RESULTS, TECHNICAL_STATUS, fmtDuration, getRecordingUrl, setCallResult } from '../../lib/calls/api';
 import { fullDate } from '../../lib/leads/format';
 import { trackEvent } from '../../lib/activity/tracker';
+import { aiTranscribe, getTranscript } from '../../lib/ai/api';
 
 const cell = { padding: '0.55rem 0.7rem', verticalAlign: 'middle' };
 
@@ -21,6 +22,7 @@ export default function CallsTable({ rows, users = {}, showLead = true, showUser
   const [playing, setPlaying] = useState(null); // { id, url }
   const [msg, setMsg] = useState(null);
   const canListen = can('calls.recordings');
+  const canTranscribe = canListen && can('ai.transcribe');
   const canEditOthers = ['branch', 'organization'].includes(scopeOf('calls.view'));
 
   async function play(id) {
@@ -82,10 +84,14 @@ export default function CallsTable({ rows, users = {}, showLead = true, showUser
                       ) : (
                         <span>Externa</span>
                       )}
-                      <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>{r.to_e164}</div>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>
+                        {r.direction === 'inbound' ? '📥 ' : '📤 '}
+                        {r.direction === 'inbound' ? r.from_e164 : r.to_e164}
+                        {r.provider === '3cx' ? ` · 3CX${r.pbx_extension ? ` ext ${r.pbx_extension}` : ''}` : ''}
+                      </div>
                     </td>
                   )}
-                  {showUser && <td style={cell}>{users[r.user_id]?.name ?? '—'}</td>}
+                  {showUser && <td style={cell}>{users[r.user_id]?.name ?? (r.provider === '3cx' ? 'Sin asesor (3CX)' : '—')}</td>}
                   <td style={cell}>{TECHNICAL_STATUS[r.technical_status]}</td>
                   <td style={cell}>{fmtDuration(r.duration_seconds)}</td>
                   <td style={cell}>
@@ -121,6 +127,7 @@ export default function CallsTable({ rows, users = {}, showLead = true, showUser
                     ) : (
                       '—'
                     )}
+                    {rec === 'available' && canTranscribe && <Transcript callId={r.id} />}
                   </td>
                 </tr>
               );
@@ -129,5 +136,46 @@ export default function CallsTable({ rows, users = {}, showLead = true, showUser
         </table>
       </div>
     </>
+  );
+}
+
+// Transcripción y resumen con IA (a pedido)
+function Transcript({ callId }) {
+  const [state, setState] = useState(null); // { loading, data, error, open }
+
+  async function open() {
+    if (state?.data) return setState((s) => ({ ...s, open: !s.open }));
+    setState({ loading: true });
+    try {
+      const saved = await getTranscript(callId);
+      if (saved) return setState({ data: saved, open: true });
+      const r = await aiTranscribe(callId);
+      trackEvent('ai.transcribe', { entityType: 'calls', entityId: callId, metadata: { cached: !!r.cached } });
+      setState({ data: { transcript: r.transcript, summary: r.summary }, open: true });
+    } catch (e) {
+      setState({ error: e.message });
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 6, maxWidth: 360 }}>
+      <button className="btn btn-secondary" style={{ height: 28, fontSize: '0.78rem' }} disabled={state?.loading} onClick={open}>
+        {state?.loading ? 'Transcribiendo…' : state?.data ? (state.open ? 'Ocultar transcripción' : '📝 Ver transcripción') : '📝 Transcribir con IA'}
+      </button>
+      {state?.error && <div style={{ color: 'var(--color-danger)', fontSize: '0.76rem', marginTop: 4 }}>{state.error}</div>}
+      {state?.open && state.data && (
+        <div style={{ marginTop: 6, fontSize: '0.8rem' }}>
+          {state.data.summary && (
+            <p style={{ padding: '6px 8px', borderRadius: 6, background: 'var(--color-active-bg)', whiteSpace: 'pre-line', marginBottom: 6 }}>
+              <strong>Resumen:</strong> {state.data.summary}
+            </p>
+          )}
+          <details>
+            <summary style={{ cursor: 'pointer', color: 'var(--color-text-muted)' }}>Transcripción completa</summary>
+            <p style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto', marginTop: 4 }}>{state.data.transcript}</p>
+          </details>
+        </div>
+      )}
+    </div>
   );
 }

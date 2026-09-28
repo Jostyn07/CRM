@@ -19,6 +19,7 @@ import LeadOpportunityTab from '../../../components/opportunities/leadOpportunit
 import LeadTimeline from '../../../components/leads/leadTimeline';
 import LeadTasksTab from '../../../components/tasks/leadTasksTab';
 import LeadWhatsappTab from '../../../components/whatsapp/leadWhatsappTab';
+import LeadAiPanel from '../../../components/ai/leadAiPanel';
 import { useCalls } from '../../../lib/calls/callContext';
 
 const TABS = [
@@ -180,6 +181,8 @@ function LeadDetail() {
         </div>
         {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginTop: 8 }}>{error}</p>}
       </div>
+
+      {!deleted && <LeadAiPanel lead={lead} />}
 
       {/* Pestañas */}
       <div className="tabs-bar" role="tablist">
