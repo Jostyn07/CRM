@@ -87,9 +87,9 @@ function Dashboard() {
   const top = [...ranking].sort((a, b) => b.leads_contacted - a.leads_contacted).slice(0, 5);
 
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 1250, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: '0.8rem', flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: '1.35rem' }}>Dashboard</h1>
+    <main className="dashboard-page" style={{ padding: '1.5rem', maxWidth: 1250, margin: '0 auto' }}>
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: '0.8rem', flexWrap: 'wrap' }}>
+        <div><div className="dashboard-eyebrow">RESUMEN DE ACTIVIDAD</div><h1 className="dashboard-title" style={{ fontSize: '1.35rem' }}>Dashboard</h1><p className="dashboard-description">Una vista general del rendimiento de tu equipo.</p></div>
         <a className="btn btn-secondary" href="/reportes">
           📈 Ver reportes
         </a>
@@ -121,7 +121,7 @@ function Dashboard() {
         </TileGrid>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="dashboard-chart-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
         <div className="card">
           <h3 style={{ fontSize: '0.95rem', marginBottom: 10 }}>Leads nuevos por día</h3>
           <DailyChart rows={daily} field="leads_new" label="Leads nuevos" />
@@ -143,7 +143,7 @@ function Dashboard() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
+      <div className="dashboard-bottom-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
         <div className="card">
           <h3 style={{ fontSize: '0.95rem', marginBottom: 10 }}>Mis metas del mes</h3>
           <GoalsProgress rows={goals} currency={cur} />
