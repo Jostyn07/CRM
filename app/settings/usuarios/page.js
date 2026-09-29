@@ -1,6 +1,6 @@
 'use client';
 // Ruta: app/settings/usuarios/page.js
-// Usuarios de la organización: lista, invitación (Edge Function
+// Usuarios de la organización: lista, creación con contraseña (Edge Function
 // invite-user), estado, rol, sucursales, permisos individuales y
 // enlace para restablecer contraseña. Todo lo valida la base de datos.
 
@@ -123,7 +123,7 @@ function Users() {
         action={
           can('users.manage') && (
             <button className="btn btn-primary" onClick={() => setInviteOpen(true)}>
-              + Invitar usuario
+              + Crear usuario
             </button>
           )
         }
@@ -225,7 +225,7 @@ function Users() {
         </table>
       </div>
 
-      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invitar usuario" width={520}>
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Crear usuario" width={520}>
         {data && (
           <InviteForm
             data={data}
@@ -281,9 +281,77 @@ function useBranchAllowed() {
   return (id) => orgScope || mine.some((b) => b.id === id);
 }
 
+// Contraseña: mínimo 8, letras y números (lo mismo valida el servidor)
+function passwordProblem(p) {
+  if (p.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+  if (!/[A-Za-z]/.test(p) || !/[0-9]/.test(p)) return 'La contraseña debe tener letras y números.';
+  return null;
+}
+
+// Genera una contraseña fácil de dictar (sin 0/O, 1/l/I)
+function generatePassword() {
+  const letters = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const rnd = (set) => set[crypto.getRandomValues(new Uint32Array(1))[0] % set.length];
+  let out = '';
+  for (let i = 0; i < 7; i++) out += rnd(letters);
+  for (let i = 0; i < 3; i++) out += rnd(digits);
+  return out;
+}
+
+function PasswordField({ value, onChange, autoFocus }) {
+  const [show, setShow] = useState(false);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          className="input"
+          type={show ? 'text' : 'password'}
+          autoComplete="new-password"
+          autoFocus={autoFocus}
+          required
+          minLength={8}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Mínimo 8 caracteres, letras y números"
+          style={{ flex: 1 }}
+        />
+        <button type="button" className="btn btn-secondary" onClick={() => setShow((v) => !v)} title={show ? 'Ocultar' : 'Mostrar'}>
+          {show ? '🙈' : '👁️'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            onChange(generatePassword());
+            setShow(true);
+          }}
+        >
+          Generar
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={!value}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {}
+          }}
+        >
+          {copied ? '✓' : 'Copiar'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InviteForm({ data, onDone }) {
   const allowed = useBranchAllowed();
-  const [v, setV] = useState({ full_name: '', email: '', role_key: 'operator', branch_ids: [] });
+  const [v, setV] = useState({ full_name: '', email: '', role_key: 'operator', branch_ids: [], password: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -291,11 +359,14 @@ function InviteForm({ data, onDone }) {
     e.preventDefault();
     setError(null);
     if (!v.branch_ids.length) return setError('Selecciona al menos una sucursal.');
+    const pw = passwordProblem(v.password);
+    if (pw) return setError(pw);
     setSaving(true);
     const { error: fnErr } = await supabase.functions.invoke('invite-user', { body: v });
     setSaving(false);
-    if (fnErr) return setError(await errorText(fnErr, 'No se pudo enviar la invitación.'));
-    trackEvent('user.invite_sent', { metadata: { role_key: v.role_key, branches: v.branch_ids.length } });
+    if (fnErr) return setError(await errorText(fnErr, 'No se pudo crear el usuario.'));
+    trackEvent('user.created', { metadata: { role_key: v.role_key, branches: v.branch_ids.length } });
+    window.alert(`Usuario creado.\n\nCorreo: ${v.email}\nContraseña: ${v.password}\n\nEntrégale estos datos por un medio seguro.`);
     onDone();
   }
 
@@ -323,12 +394,16 @@ function InviteForm({ data, onDone }) {
         <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 6 }}>Sucursales</span>
         <BranchChecklist branches={data.branches} value={v.branch_ids} onChange={(ids) => setV({ ...v, branch_ids: ids })} allowed={allowed} />
       </div>
+      <label style={{ display: 'block', marginBottom: '0.7rem' }}>
+        <span style={{ fontSize: '0.85rem' }}>Contraseña</span>
+        <PasswordField value={v.password} onChange={(password) => setV({ ...v, password })} />
+      </label>
       <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.8rem' }}>
-        Le llegará un correo para crear su contraseña. Solo puedes asignar roles con igual o menor alcance que el tuyo.
+        El usuario queda activo de inmediato con esta contraseña; no se envía ningún correo. Entrégale sus datos por un medio seguro. Solo puedes asignar roles con igual o menor alcance que el tuyo.
       </p>
       {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginBottom: '0.7rem' }}>{error}</p>}
       <button className="btn btn-primary" disabled={saving} style={{ width: '100%' }}>
-        {saving ? 'Enviando…' : 'Enviar invitación'}
+        {saving ? 'Creando…' : 'Crear usuario'}
       </button>
     </form>
   );
@@ -417,10 +492,21 @@ function EditUser({ user, data, onClose, onSaved }) {
     }
   }
 
-  async function sendReset() {
-    const { error: e } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: `${window.location.origin}/set-password` });
-    trackEvent('user.password_reset_sent', { entityType: 'profiles', entityId: user.id });
-    setInfo(e ? await errorText(e) : `Se envió a ${user.email} un enlace para definir una nueva contraseña.`);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [newPw, setNewPw] = useState('');
+  async function setPassword() {
+    setError(null);
+    setInfo(null);
+    const pw = passwordProblem(newPw);
+    if (pw) return setError(pw);
+    setSaving(true);
+    const { error: fnErr } = await supabase.functions.invoke('invite-user', { body: { action: 'set_password', user_id: user.id, password: newPw } });
+    setSaving(false);
+    if (fnErr) return setError(await errorText(fnErr, 'No se pudo cambiar la contraseña.'));
+    trackEvent('user.password_set', { entityType: 'profiles', entityId: user.id });
+    setInfo(`Contraseña actualizada para ${user.email}. Entrégasela por un medio seguro.`);
+    setPwOpen(false);
+    setNewPw('');
   }
 
   const label = { display: 'block', fontSize: '0.85rem', marginBottom: 6, fontWeight: 600 };
@@ -486,9 +572,29 @@ function EditUser({ user, data, onClose, onSaved }) {
       {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginBottom: '0.7rem' }}>{error}</p>}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <button className="btn btn-secondary" onClick={sendReset} disabled={saving}>
-          Enviar enlace de contraseña
-        </button>
+        {pwOpen ? (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', flex: '1 1 100%' }}>
+            <div style={{ flex: '1 1 320px' }}>
+              <PasswordField value={newPw} onChange={setNewPw} autoFocus />
+            </div>
+            <button className="btn btn-primary" onClick={setPassword} disabled={saving || !newPw}>
+              Guardar contraseña
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setPwOpen(false);
+                setNewPw('');
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button className="btn btn-secondary" onClick={() => setPwOpen(true)} disabled={saving}>
+            🔑 Cambiar contraseña
+          </button>
+        )}
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
             Cancelar
