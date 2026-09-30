@@ -14,6 +14,7 @@ import { trackEvent } from '../../lib/activity/tracker';
 import { relTime } from '../../lib/leads/format';
 import { listClients, listPortals, saveSource, setPortalBranch, sourceStatus, syncNow } from '../../lib/clients/api';
 import { supabase } from '../../lib/supabase/client';
+import Icon, { IconText } from '../../components/ui/icon';
 
 const FILTERS = [
   { key: 'all', label: 'Todos' },
@@ -115,19 +116,24 @@ function Clients() {
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Clientes</h1>
           <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)' }}>
-            Traídos de Asesorías (solo lectura) y cruzados con los leads por teléfono y correo. Se actualizan solos todos los días a las 7:00 a. m. y a las 12:00 m. Los clientes no aparecen en Leads.
-            {status?.last_sync_at && ` Última sincronización ${relTime(status.last_sync_at)}.`}
-            {status?.connected && ` ${status.total_local} en la plataforma${status.total_remote ? ` de ${status.total_remote} en Asesorías` : ''}.`}
+            Clientes de Asesorías, cruzados con los leads por teléfono y correo.
+            {can('clients.manage') && (
+              <>
+                {' '}Se actualizan todos los días a las 7:00 a. m. y a las 12:00 m.
+                {status?.last_sync_at && ` Última sincronización ${relTime(status.last_sync_at)}.`}
+                {status?.connected && ` ${Number(status.total_local).toLocaleString('es-CO')} clientes en la plataforma.`}
+              </>
+            )}
           </p>
         </div>
         {can('clients.manage') && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" onClick={() => setConfig(true)}>
-              ⚙️ Conexión
+              <IconText name="settings" size={15}>Conexión</IconText>
             </button>
             {portals.length > 0 && (
               <button className="btn btn-secondary" onClick={() => setPortalsOpen(true)}>
-                🏢 Portales
+                <IconText name="building-2" size={15}>Portales</IconText>
               </button>
             )}
             {status?.connected && (
@@ -136,7 +142,7 @@ function Clients() {
                   Solo cambios
                 </button>
                 <button className="btn btn-primary" disabled={syncing} onClick={() => sync(true)} title="Actualiza todos los clientes (pólizas y dependientes incluidos)">
-                  {syncing ? 'Sincronizando…' : '🔄 Sincronizar todo'}
+                  <IconText name="refresh-cw" size={15}>{syncing ? 'Sincronizando…' : 'Sincronizar todo'}</IconText>
                 </button>
               </>
             )}
@@ -149,8 +155,11 @@ function Clients() {
           {can('clients.manage') ? 'Conecta la API de clientes de Asesorías con el botón “Conexión”.' : 'Un administrador todavía no ha conectado la fuente de clientes.'}
         </div>
       )}
-      {status?.last_status === 'error' && status.last_error && (
-        <p style={{ color: 'var(--color-danger)', fontSize: '0.84rem', marginBottom: 8 }}>⚠ Última sincronización con error: {status.last_error}</p>
+      {can('clients.manage') && status?.last_status === 'error' && status.last_error && (
+        <p style={{ color: 'var(--color-danger)', fontSize: '0.84rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="triangle-alert" size={15} />
+          Última sincronización con error: {status.last_error}
+        </p>
       )}
       {msg && <p style={{ color: 'var(--color-success, #16a34a)', fontSize: '0.85rem', marginBottom: 8 }}>{msg}</p>}
       {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginBottom: 8 }}>{error}</p>}
@@ -172,7 +181,7 @@ function Clients() {
             </button>
           ))}
         </div>
-        {portals.length > 0 && (
+        {portals.length > 1 && (
           <select
             className="input"
             style={{ width: 200 }}
@@ -204,7 +213,7 @@ function Clients() {
               <th style={{ padding: '0.55rem 0.7rem' }}>Teléfono</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>Póliza más reciente</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>Dependientes</th>
-              <th style={{ padding: '0.55rem 0.7rem' }}>Portal</th>
+              {portals.length > 0 && <th style={{ padding: '0.55rem 0.7rem' }}>Portal</th>}
               <th style={{ padding: '0.55rem 0.7rem' }}>Operador</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>En la plataforma</th>
             </tr>
@@ -235,18 +244,21 @@ function Clients() {
                 <td style={{ padding: '0.5rem 0.7rem', whiteSpace: 'nowrap' }}>
                   {(c.phones ?? []).join(', ') || '—'}
                   {c.shared_phone_count > 0 && (
-                    <div style={{ fontSize: '0.72rem', color: '#7c3aed' }} title="Otras personas tienen este número">
-                      👪 +{c.shared_phone_count} con el mismo número
+                    <div style={{ fontSize: '0.72rem', color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 4 }} title="Otras personas tienen este número">
+                      <Icon name="users" size={12} />+{c.shared_phone_count} con el mismo número
                     </div>
                   )}
                 </td>
                 <td style={{ padding: '0.5rem 0.7rem' }}>{c.active_policy || (c.policies_count ? `${c.policies_count} póliza(s)` : '—')}</td>
                 <td style={{ padding: '0.5rem 0.7rem' }}>{c.dependents_count || '—'}</td>
-                <td style={{ padding: '0.5rem 0.7rem' }}>{c.portal || '—'}</td>
+                {portals.length > 0 && <td style={{ padding: '0.5rem 0.7rem' }}>{c.portal || '—'}</td>}
                 <td style={{ padding: '0.5rem 0.7rem' }}>{c.operator_name || '—'}</td>
                 <td style={{ padding: '0.5rem 0.7rem' }} onClick={(e) => e.stopPropagation()}>
                   {c.lead_ids?.length ? (
-                    <a href={`/leads/${c.lead_ids[0]}?tab=cliente`}>✅ Ver lead{c.lead_ids.length > 1 ? ` (+${c.lead_ids.length - 1})` : ''}</a>
+                    <a href={`/leads/${c.lead_ids[0]}?tab=cliente`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <Icon name="circle-check" size={14} color="var(--color-success, #16a34a)" />
+                      Ver lead{c.lead_ids.length > 1 ? ` (+${c.lead_ids.length - 1})` : ''}
+                    </a>
                   ) : (
                     <span style={{ color: '#d97706' }}>No está</span>
                   )}
@@ -260,11 +272,11 @@ function Clients() {
       {pages > 1 && (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 10, fontSize: '0.85rem' }}>
           <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-            ←
+            <Icon name="chevron-left" size={16} />
           </button>
           Página {page} de {pages} · {total} clientes
           <button className="btn btn-secondary" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-            →
+            <Icon name="chevron-right" size={16} />
           </button>
         </div>
       )}
@@ -375,7 +387,7 @@ function PortalsForm({ portals, canEdit, onChanged }) {
   return (
     <div>
       <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: 10 }}>
-        Los portales llegan con los clientes de Asesorías. Asigna cada uno a su sucursal: los administradores de esa sucursal verán sus clientes. A un usuario también se le pueden asignar portales en Configuración → Usuarios.
+        Los portales llegan con los clientes de Asesorías. Asigna cada uno a su sucursal: los administradores de esa sucursal verán sus clientes. A un usuario también se le pueden asignar portales en Configuración › Usuarios.
       </p>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
         <thead>
