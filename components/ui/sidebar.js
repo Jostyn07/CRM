@@ -54,6 +54,16 @@ const SETTINGS_LINKS = [
   { href: '/settings', label: 'Mi cuenta', show: () => true },
 ];
 
+// Logo: el de la organización (Mi cuenta) o, si no hay, el de la
+// plataforma en public/logo.svg (y public/logo-mark.png como respaldo)
+const DEFAULT_LOGOS = ['/logo.svg', '/logo-mark.png'];
+function LogoImage({ src, alt, fallbackText }) {
+  const list = [src, ...DEFAULT_LOGOS].filter(Boolean);
+  const [i, setI] = useState(0);
+  if (i >= list.length) return <span className="sb-logo-initials">{fallbackText}</span>;
+  return <img key={list[i]} src={list[i]} alt={alt} onError={() => setI((n) => n + 1)} />;
+}
+
 const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/registro'];
 
 // Abre/cierra el menú en móvil (lo usa la barra superior)
@@ -147,8 +157,8 @@ export default function Sidebar() {
       <aside className={`sb${mobileOpen ? ' open' : ''}`} aria-label="Menú principal">
         {/* Logo de la organización */}
         <div className="sb-logo">
-          <a href="/dashboard" className="sb-logo-ring" aria-label={`${orgName} — Inicio`}>
-            {organization?.logo_url ? <img src={organization.logo_url} alt={orgName} /> : <span className="sb-logo-initials">{initials(orgName)}</span>}
+          <a href="/dashboard" className="sb-logo-mark" aria-label={`${orgName} — Inicio`}>
+            <LogoImage src={organization?.logo_url} alt={orgName} fallbackText={initials(orgName)} />
           </a>
         </div>
 
@@ -214,7 +224,7 @@ export default function Sidebar() {
               <button className={`sb-link${pathname?.startsWith('/settings') && !settingsOpen ? ' active' : ''}`} onClick={() => setSettingsOpen((v) => !v)} aria-expanded={settingsOpen}>
                 <Icon name="settings" size={19} strokeWidth={1.8} />
                 Configuración
-                <Icon name={settingsOpen ? 'chevron-up' : 'chevron-down'} size={15} style={{ marginLeft: 'auto', color: 'var(--sb-muted)' }} />
+                <Icon name={settingsOpen ? 'chevron-down' : 'chevron-right'} size={15} style={{ marginLeft: 'auto', color: 'var(--sb-muted)' }} />
               </button>
               {settingsOpen && (
                 <div className="sb-sub">

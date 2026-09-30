@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Icon from './icon';
 
 // Fondos curados (picsum.photos con seed fijo = misma imagen siempre,
 // sin necesidad de API key ni subir archivos). "none" = solo el color
 // de fondo sólido, sin imagen.
 const BACKGROUNDS = [
-  { id: 'none', label: 'Ninguno', url: null },
+  { id: 'none', label: 'Seda dorada (predeterminado)', url: null },
   { id: 'aurora', label: 'Aurora', url: 'https://picsum.photos/seed/aurora-leads/1920/1080' },
   { id: 'ocean', label: 'Océano', url: 'https://picsum.photos/seed/ocean-leads/1920/1080' },
   { id: 'forest', label: 'Bosque', url: 'https://picsum.photos/seed/forest-leads/1920/1080' },
@@ -17,7 +18,7 @@ const BACKGROUNDS = [
 const STORAGE_KEY = 'leads-platform-bg';
 
 export default function BackgroundPicker() {
-  const [selectedId, setSelectedId] = useState('aurora');
+  const [selectedId, setSelectedId] = useState('none');
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -42,7 +43,8 @@ export default function BackgroundPicker() {
         className="bg-layer"
         style={{ backgroundImage: current.url ? `url(${current.url})` : 'none' }}
       />
-      <div className="bg-overlay" />
+      {/* Sin imagen elegida se ve el fondo del tema (seda dorada en claro) */}
+      {current.url && <div className="bg-overlay" />}
 
       {/* Botón flotante para elegir fondo */}
       <div style={{ position: 'fixed', bottom: '1rem', right: '1rem', zIndex: 40 }}>
@@ -72,7 +74,7 @@ export default function BackgroundPicker() {
           title="Cambiar fondo"
           style={{ borderRadius: '50%', width: 42, height: 42, padding: 0, fontSize: '1.1rem' }}
         >
-          🎨
+          <Icon name="palette" size={18} />
         </button>
       </div>
     </>

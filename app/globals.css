@@ -1284,3 +1284,243 @@ a.kpi-card:hover { transform: translateY(-2px); }
   .dash-quote { align-items: flex-start; text-align: left; }
   .dash-hello { font-size: 1.6rem; }
 }
+
+/* ============================================================
+   TEMA "LEADS" — paleta crema, sidebar negro cálido y dorado
+   (según la guía de diseño; sobrescribe los valores anteriores)
+   ============================================================ */
+:root {
+  --background: #f5f1e8;
+  --surface: #fffdfa;
+  --surface-secondary: #f8f4eb;
+  --gold: #c99a3d;
+  --gold-light: #e8c77e;
+  --gold-dark: #9c7025;
+  --text-primary: #202938;
+  --text-secondary: #77736c;
+  --text-muted: #a29b90;
+  --sidebar-bg: #171411;
+  --sidebar-hover: #30291f;
+  --sidebar-active: #c99a3d;
+  --sidebar-text: #f8f4eb;
+  --border: #e9e0d0;
+  --shadow-card: 0 5px 18px rgba(42, 32, 16, 0.07);
+  --shadow-hover: 0 10px 28px rgba(42, 32, 16, 0.13);
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  --gold-gradient: linear-gradient(135deg, #e8c77e 0%, #c99a3d 100%);
+  --sb-bg: radial-gradient(120% 35% at 0% 0%, rgba(232, 199, 126, 0.16) 0%, rgba(232, 199, 126, 0) 60%),
+           linear-gradient(180deg, #1b1713 0%, #100e0c 100%);
+  --sb-text: #e9e2d6;
+  --sb-hover: rgba(232, 199, 126, 0.1);
+}
+
+[data-theme="light"] {
+  --color-bg: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface);
+  --color-card: var(--surface);
+  --color-card-hover: var(--surface-secondary);
+  --color-border: var(--border);
+  --color-text: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
+  --color-text-tertiary: var(--text-muted);
+  --color-primary: var(--gold);
+  --color-primary-hover: var(--gold-dark);
+  --color-primary-soft: #f6ecd8;
+  --color-primary-contrast: #171411;
+  --color-active-text: var(--gold-dark);
+  --color-focus-border: var(--gold);
+  --color-focus-shadow: rgba(201, 154, 61, 0.15);
+  --color-danger: #dc4545;
+  --color-success: #239b65;
+  --color-btn-secondary-bg: var(--surface);
+  --color-btn-secondary-bg-hover: var(--surface-secondary);
+  --shadow-soft: var(--shadow-card);
+}
+
+/* Fondo crema con iluminación dorada sutil (arriba a la derecha) y un
+   barrido de luz curvo, como en la referencia */
+[data-theme="light"] body {
+  background:
+    radial-gradient(ellipse 55% 45% at 100% 0%, rgba(232, 199, 126, 0.16), transparent 70%),
+    radial-gradient(ellipse 70% 30% at 45% -8%, rgba(255, 255, 255, 0.9), transparent 70%),
+    radial-gradient(ellipse 40% 60% at 20% 0%, rgba(232, 199, 126, 0.1), transparent 70%),
+    var(--background);
+  background-attachment: fixed;
+}
+[data-theme="light"] body::before {
+  content: '';
+  position: fixed;
+  top: -180px;
+  left: 30%;
+  width: 900px;
+  height: 420px;
+  border-radius: 50%;
+  border: 1px solid rgba(201, 154, 61, 0.12);
+  box-shadow: 0 0 0 60px rgba(255, 255, 255, 0.18), 0 0 0 120px rgba(232, 199, 126, 0.05);
+  transform: rotate(-8deg);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Sidebar */
+.sb { border-right: 1px solid rgba(232, 199, 126, 0.18); }
+.sb-link { color: var(--sb-text); margin: 0; transition: all 0.2s ease; }
+.sb-link:hover { background: rgba(232, 199, 126, 0.1); color: #fff; }
+.sb-link.active {
+  background: linear-gradient(90deg, #e8c77e, #c99a3d);
+  color: #171411;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(201, 154, 61, 0.2);
+}
+.sb-logo-ring { box-shadow: 0 0 0 2px rgba(232, 199, 126, 0.7), 0 0 0 7px rgba(232, 199, 126, 0.08), 0 12px 34px rgba(0, 0, 0, 0.5); }
+
+/* Tarjetas: fondo cálido, borde suave, sombra ligera (movimiento solo
+   en las que se pueden abrir) */
+[data-theme="light"] .card,
+[data-theme="light"] .soft-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+a.card:hover, a.soft-card:hover, .lead-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* Botones */
+.btn-primary {
+  background: linear-gradient(135deg, #e8c77e, #c99a3d);
+  color: #171411;
+  border: 1px solid #d4aa56;
+  font-weight: 600;
+  box-shadow: 0 3px 9px rgba(201, 154, 61, 0.18);
+  transition: all 0.2s ease;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #f0d99e, #d5a94e);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(201, 154, 61, 0.25);
+  filter: none;
+}
+[data-theme="light"] .btn-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+/* Campos */
+[data-theme="light"] .input,
+[data-theme="light"] select.input,
+[data-theme="light"] textarea.input {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 154, 61, 0.15);
+}
+[data-theme="light"] .soft-card.task-group.danger {
+  background: linear-gradient(180deg, rgba(220, 69, 69, 0.07), rgba(220, 69, 69, 0.02)), var(--surface);
+  border-color: rgba(220, 69, 69, 0.22);
+}
+
+/* ============================================================
+   Sidebar y fondo — ajuste fino a la referencia
+   ============================================================ */
+.sb {
+  background:
+    radial-gradient(90% 30% at 50% 0%, rgba(201, 154, 61, 0.22) 0%, rgba(201, 154, 61, 0) 70%),
+    radial-gradient(120% 60% at 100% 50%, rgba(201, 154, 61, 0.08) 0%, rgba(201, 154, 61, 0) 60%),
+    linear-gradient(180deg, #1e1914 0%, #15120e 45%, #0f0d0b 100%);
+  border-right: none;
+  box-shadow: 6px 0 30px rgba(20, 14, 6, 0.18);
+}
+/* Luz dorada sobre el borde derecho */
+.sb::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(232, 199, 126, 0.95) 0%, rgba(232, 199, 126, 0.55) 35%, rgba(201, 154, 61, 0.25) 70%, rgba(201, 154, 61, 0.1) 100%);
+  box-shadow: 0 0 18px 3px rgba(232, 199, 126, 0.45), 0 0 4px 1px rgba(255, 236, 190, 0.6);
+  pointer-events: none;
+}
+.sb-logo { padding: 1.1rem 1rem 0.9rem; }
+.sb-logo-mark {
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 18px rgba(232, 199, 126, 0.18));
+}
+.sb-logo-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  transform: scale(1.06);
+}
+.sb-logo-mark .sb-logo-initials { font-size: 3rem; }
+/* Organización: sin tarjeta, entre separadores finos */
+.sb-org {
+  margin: 0 0.85rem 0.7rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid rgba(236, 228, 214, 0.08);
+  border-bottom: 1px solid rgba(236, 228, 214, 0.08);
+}
+.sb-org-btn { background: none; border: none; padding: 0.55rem 0.4rem; }
+.sb-org-btn:hover { background: rgba(232, 199, 126, 0.06); }
+.sb-org-avatar { background: rgba(232, 199, 126, 0.14); border: 1px solid rgba(232, 199, 126, 0.25); }
+.sb-org-name { color: #f8f4eb; }
+.sb-nav { gap: 2px; }
+.sb-link { height: 42px; font-size: 0.92rem; border-radius: 10px; padding: 0 0.9rem; }
+.sb-link .icon { color: #e9e2d6; }
+.sb-link.active {
+  background: linear-gradient(90deg, #ecd190 0%, #d9b064 55%, #c99a3d 100%);
+  box-shadow: 0 4px 14px rgba(201, 154, 61, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.sb-footer { border-top: 1px solid rgba(236, 228, 214, 0.08); }
+
+/* Fondo: crema con pliegues de seda e hilos dorados */
+[data-theme="light"] body {
+  background: #f6f0e4 url('/fondo-seda.svg') top center / cover no-repeat fixed;
+}
+[data-theme="light"] body::before { display: none; }
+
+/* Transición suave entre el menú y el fondo (sin corte brusco) */
+.sb { box-shadow: none; }
+.sb::after {
+  right: -1px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(232, 199, 126, 0.5) 0%, rgba(232, 199, 126, 0.22) 40%, rgba(201, 154, 61, 0.08) 100%);
+  box-shadow: 0 0 10px 1px rgba(232, 199, 126, 0.18);
+}
+/* Halo cálido que se funde con el fondo crema */
+.sb::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 56px;
+  background: linear-gradient(90deg, rgba(40, 29, 14, 0.16) 0%, rgba(120, 90, 40, 0.06) 45%, rgba(201, 154, 61, 0) 100%);
+  pointer-events: none;
+}
+[data-theme="dark"] .sb::before { background: linear-gradient(90deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0)); }
+@media (max-width: 900px) {
+  .sb:not(.open)::before, .sb:not(.open)::after { display: none; }
+}
