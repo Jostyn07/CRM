@@ -1,18 +1,60 @@
 'use client';
 // Ruta: app/dashboard/page.js
-// Dashboard (Fase 5): indicadores del período (por defecto últimos 30
-// días, zona horaria de la organización), leads por día, embudo, metas del
-// mes, pendientes y top del equipo. Cada quien ve sus números según su
-// alcance. Cada indicador tiene ⓘ con definición, población y fuente.
+// Dashboard: saludo, 6 indicadores del período (con tendencia diaria y
+// comparación con el período anterior), leads nuevos por día, conversión
+// por etapa, tareas de hoy, leads recientes, top del equipo, actividad
+// reciente y metas del mes. Cada quien ve sus números según su alcance
+// (propio / sucursal / organización); los cálculos los hace la base.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import RequirePermission from '../../components/ui/requirePermission';
-import { DailyChart, FunnelChart, GoalsProgress, ReportFilters, StatTile, TileGrid } from '../../components/reports/widgets';
+import Icon from '../../components/ui/icon';
+import {
+  ACTIVITY_FILTERS,
+  ActivityFeed,
+  BarsChart,
+  Hero,
+  KpiCard,
+  LinkAction,
+  MiniSelect,
+  MonthGoals,
+  Panel,
+  PromoCard,
+  RecentLeads,
+  StageBars,
+  TEAM_METRICS,
+  TeamTop,
+  TodayTasks,
+} from '../../components/dashboard/widgets';
+import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useLeadConfig } from '../../lib/leads/useLeadConfig';
 import { useFunnelConfig } from '../../lib/opportunities/api';
-import { listTasks, dueLabel, isOverdue } from '../../lib/tasks/api';
-import { getDaily, getFunnel, getGoalProgress, getKpis, getRanking, money, num, pct, presetRange, shortDate, todayIn, useOrgTimezone } from '../../lib/reports/api';
+import { searchLeads } from '../../lib/leads/api';
+import { isOverdue, listTasks } from '../../lib/tasks/api';
+import { addDays, getDaily, getFunnel, getGoalProgress, getKpis, getRanking, money, num, pct, presetRange, todayIn, useOrgTimezone } from '../../lib/reports/api';
+
+const PERIODS = [
+  { key: 'today', label: 'Hoy' },
+  { key: 'week', label: 'Esta semana' },
+  { key: 'month', label: 'Este mes' },
+  { key: '30d', label: 'Últimos 30 días' },
+  { key: 'quarter', label: 'Trimestre' },
+];
+
+const COLORS = { blue: '#3f6fe0', green: '#1f9d55', red: '#d64545', purple: '#7a5cc7', wa: '#22b35e', gold: '#c99a3f' };
+
+// Período anterior de igual duración (para la tendencia)
+function previousRange({ from, to }) {
+  const days = Math.round((new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`)) / 86400000) + 1;
+  return { from: addDays(from, -days), to: addDays(from, -1) };
+}
+function trend(now, before) {
+  const a = Number(now) || 0;
+  const b = Number(before) || 0;
+  if (!b) return a ? 100 : null;
+  return Math.round(((a - b) / b) * 100);
+}
 
 export default function DashboardPage() {
   return (
@@ -23,208 +65,232 @@ export default function DashboardPage() {
 }
 
 function Dashboard() {
-  const { user, profile, scopeOf } = useSession();
+  const { user, profile, scopeOf, can } = useSession();
   const config = useLeadConfig();
   const fconfig = useFunnelConfig();
   const tz = useOrgTimezone();
   const scope = scopeOf('reports.view');
-  const [f, setF] = useState(null);
+
+  const [preset, setPreset] = useState('30d');
+  const [branchId, setBranchId] = useState('');
+  const [userId, setUserId] = useState('');
   const [kpis, setKpis] = useState(null);
+  const [prevKpis, setPrevKpis] = useState(null);
   const [daily, setDaily] = useState([]);
   const [funnelId, setFunnelId] = useState('');
   const [funnel, setFunnel] = useState([]);
   const [goals, setGoals] = useState([]);
   const [ranking, setRanking] = useState([]);
+  const [teamMetric, setTeamMetric] = useState('leads_contacted');
   const [tasks, setTasks] = useState([]);
+  const [leadsView, setLeadsView] = useState('all');
+  const [leads, setLeads] = useState(null);
+  const [actFilter, setActFilter] = useState('all');
+  const [activity, setActivity] = useState(null);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (tz && !f) setF({ preset: '30d', ...presetRange('30d', tz), branchId: '', userId: '' });
-  }, [tz, f]);
+  const f = useMemo(() => (tz ? { ...presetRange(preset, tz), branchId, userId } : null), [tz, preset, branchId, userId]);
 
   useEffect(() => {
     if (!funnelId && fconfig.funnels.length) setFunnelId(fconfig.funnels[0].id);
   }, [fconfig.funnels, funnelId]);
 
+  // Indicadores, serie diaria y ranking del período
   const load = useCallback(async () => {
     if (!f) return;
     setError(null);
     try {
-      const [k, d, r] = await Promise.all([getKpis(f), getDaily(f), getRanking(f)]);
+      const [k, pk, d, r] = await Promise.all([getKpis(f), getKpis({ ...f, ...previousRange(f) }), getDaily(f), getRanking(f)]);
       setKpis(k);
+      setPrevKpis(pk);
       setDaily(d ?? []);
       setRanking(r ?? []);
     } catch (e) {
       setError(e.message);
     }
   }, [f]);
-
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
     if (!f || !funnelId) return;
-    getFunnel(funnelId, f).then(setFunnel).catch(() => setFunnel([]));
+    getFunnel(funnelId, f).then((s) => setFunnel(s ?? [])).catch(() => setFunnel([]));
   }, [f, funnelId]);
 
+  // Metas del mes y mis tareas
   useEffect(() => {
     if (!tz || !user?.id) return;
-    getGoalProgress(`${todayIn(tz).slice(0, 7)}-01`).then(setGoals).catch(() => setGoals([]));
+    getGoalProgress(`${todayIn(tz).slice(0, 7)}-01`).then((g) => setGoals(g ?? [])).catch(() => setGoals([]));
     listTasks({ view: 'mine', userId: user.id, status: 'open', limit: 50 }).then(setTasks).catch(() => setTasks([]));
   }, [tz, user?.id]);
 
-  const users = useMemo(
-    () => (f?.branchId ? config.users.filter((u) => u.branchIds.includes(f.branchId)) : config.users),
-    [config.users, f?.branchId]
-  );
+  // Leads recientes (según alcance; "Míos" = asignados a mí)
+  useEffect(() => {
+    if (!user?.id || !can('leads.view')) return;
+    setLeads(null);
+    const filters = { ...(leadsView === 'mine' ? { assigned_user_ids: [user.id] } : {}), ...(leadsView === 'unassigned' ? { unassigned: true } : {}), ...(branchId ? { branch_ids: [branchId] } : {}) };
+    searchLeads({ filters, page: 1, pageSize: 5, sort: 'created_desc' })
+      .then((r) => setLeads(r.rows))
+      .catch(() => setLeads([]));
+  }, [user?.id, leadsView, branchId, can]);
 
-  if (!profile || !f) return <main style={{ padding: '1.5rem' }}>Cargando…</main>;
+  // Actividad reciente (línea de tiempo de los leads que puedo ver)
+  useEffect(() => {
+    if (!user?.id) return;
+    setActivity(null);
+    const types = ACTIVITY_FILTERS.find((x) => x.key === actFilter)?.types;
+    let q = supabase.from('lead_activities').select('id, type, lead_id, body, metadata, created_at, lead:leads(first_name, last_name)').order('created_at', { ascending: false }).limit(6);
+    if (types) q = q.in('type', types);
+    if (branchId) q = q.eq('branch_id', branchId);
+    q.then(({ data }) => setActivity(data ?? []));
+  }, [user?.id, actFilter, branchId]);
+
+  const users = useMemo(() => (branchId ? config.users.filter((u) => u.branchIds.includes(branchId)) : config.users), [config.users, branchId]);
+  const spark = useCallback((field) => daily.map((r) => Number(r[field]) || 0), [daily]);
+
+  if (!profile || !f) return <main style={{ padding: '1.6rem' }}>Cargando…</main>;
 
   const cur = kpis?.currency ?? 'USD';
-  const period = `${shortDate(f.from)} – ${shortDate(f.to)} (${tz})`;
-  const pending = tasks.filter((t) => isOverdue(t) || (t.due_at && new Date(t.due_at).toDateString() === new Date().toDateString())).slice(0, 6);
-  const top = [...ranking].sort((a, b) => b.leads_contacted - a.leads_contacted).slice(0, 5);
+  const today = tasks.filter((t) => isOverdue(t) || (t.due_at && new Date(t.due_at).toDateString() === new Date().toDateString())).slice(0, 4);
+  const firstName = (profile.full_name || user.email || '').split(/\s+/)[0];
 
-  return (
-    <main className="dashboard-page" style={{ padding: '1.5rem', maxWidth: 1250, margin: '0 auto' }}>
-      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: '0.8rem', flexWrap: 'wrap' }}>
-        <div><div className="dashboard-eyebrow">RESUMEN DE ACTIVIDAD</div><h1 className="dashboard-title" style={{ fontSize: '1.35rem' }}>Dashboard</h1><p className="dashboard-description">Una vista general del rendimiento de tu equipo.</p></div>
-        <a className="btn btn-secondary" href="/reportes">
-          📈 Ver reportes
-        </a>
-      </div>
-
-      <ReportFilters
-        tz={tz}
-        value={f}
-        onChange={setF}
-        branches={config.allBranches}
-        users={users}
-        showBranch={scope === 'organization'}
-        showUser={scope !== 'own'}
-      />
-      {error && <p style={{ color: 'var(--color-danger)', marginBottom: 8 }}>{error}</p>}
-
-      {!kpis ? (
-        <p>Cargando indicadores…</p>
-      ) : (
-        <TileGrid>
-          <StatTile metric="leads_new" value={num(kpis.leads_new)} period={period} href="/leads" />
-          <StatTile metric="leads_contacted" value={num(kpis.leads_contacted)} sub={`Tasa de contacto de nuevos: ${pct(kpis.new_contacted, kpis.leads_new)}`} period={period} />
-          <StatTile metric="leads_no_contact" value={num(kpis.leads_no_contact)} sub={`Sin asignar: ${num(kpis.leads_unassigned)}`} tone={kpis.leads_no_contact ? 'bad' : undefined} />
-          <StatTile metric="calls_total" value={num(kpis.calls_total)} sub={`Contestadas: ${num(kpis.calls_answered)} (${pct(kpis.calls_answered, kpis.calls_total)}) · ${num(kpis.call_minutes, 1)} min`} period={period} />
-          <StatTile metric="wa_received" value={num(kpis.wa_received)} sub={`Enviados: ${num(kpis.wa_sent)}`} period={period} />
-          <StatTile metric="opps_open" value={num(kpis.opps_open)} sub={money(kpis.opps_open_value, cur)} href="/funnels" />
-          <StatTile metric="opps_won" value={num(kpis.opps_won)} sub={`${money(kpis.opps_won_value, cur)} · Perdidas: ${num(kpis.opps_lost)}`} period={period} />
-          <StatTile metric="tasks_overdue" value={num(kpis.tasks_overdue)} sub={`Completadas en el período: ${num(kpis.tasks_completed)}`} tone={kpis.tasks_overdue ? 'bad' : undefined} href="/tareas" />
-        </TileGrid>
-      )}
-
-      <div className="dashboard-chart-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-        <div className="card">
-          <h3 style={{ fontSize: '0.95rem', marginBottom: 10 }}>Leads nuevos por día</h3>
-          <DailyChart rows={daily} field="leads_new" label="Leads nuevos" />
-        </div>
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <h3 style={{ fontSize: '0.95rem' }}>Conversión por etapa</h3>
-            {fconfig.funnels.length > 1 && (
-              <select className="input" style={{ width: 170, height: 32 }} value={funnelId} onChange={(e) => setFunnelId(e.target.value)}>
-                {fconfig.funnels.map((fu) => (
-                  <option key={fu.id} value={fu.id}>
-                    {fu.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <FunnelChart stages={funnel} currency={cur} />
-        </div>
-      </div>
-
-      <div className="dashboard-bottom-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
-        <div className="card">
-          <h3 style={{ fontSize: '0.95rem', marginBottom: 10 }}>Mis metas del mes</h3>
-          <GoalsProgress rows={goals} currency={cur} />
-        </div>
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h3 style={{ fontSize: '0.95rem' }}>Mis pendientes de hoy</h3>
-            <a href="/tareas" style={{ fontSize: '0.8rem' }}>
-              Ver todas →
-            </a>
-          </div>
-          {pending.length === 0 ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Nada vencido ni para hoy. 🎉</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {pending.map((t) => (
-                <a key={t.id} href="/tareas" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '0.83rem', color: 'inherit', textDecoration: 'none' }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-                  <span style={{ flexShrink: 0, color: isOverdue(t) ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
-                    {isOverdue(t) ? '⚠ ' : ''}
-                    {dueLabel(t)}
-                  </span>
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <h3 style={{ fontSize: '0.95rem' }}>Top del equipo · contactados</h3>
-            <a href="/reportes?tab=equipo" style={{ fontSize: '0.8rem' }}>
-              Ranking →
-            </a>
-          </div>
-          <RankingTableMini rows={top} userMap={config.maps.user} me={user?.id} />
-        </div>
-      </div>
-      {/* Tabla accesible de la serie diaria */}
-      <details style={{ marginTop: '1rem', fontSize: '0.8rem' }}>
-        <summary style={{ cursor: 'pointer', color: 'var(--color-text-muted)' }}>Ver datos por día en tabla</summary>
-        <table style={{ marginTop: 8, borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              {['Día', 'Leads nuevos', 'Contactados', 'Llamadas', 'Contestadas', 'WhatsApp recibidos'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '3px 10px' }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {daily.map((r) => (
-              <tr key={r.day}>
-                <td style={{ padding: '3px 10px' }}>{shortDate(r.day)}</td>
-                <td style={{ padding: '3px 10px' }}>{r.leads_new}</td>
-                <td style={{ padding: '3px 10px' }}>{r.leads_contacted}</td>
-                <td style={{ padding: '3px 10px' }}>{r.calls}</td>
-                <td style={{ padding: '3px 10px' }}>{r.calls_answered}</td>
-                <td style={{ padding: '3px 10px' }}>{r.wa_received}</td>
-              </tr>
+  const filters = (scope === 'organization' || scope === 'branch') && (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {scope === 'organization' && config.allBranches.length > 1 && (
+        <div className="field-wrap">
+          <Icon name="building-2" size={15} />
+          <select
+            className="input select-pill"
+            style={{ height: 38 }}
+            value={branchId}
+            onChange={(e) => {
+              setBranchId(e.target.value);
+              setUserId('');
+            }}
+            aria-label="Sucursal"
+          >
+            <option value="">Todas las sucursales</option>
+            {config.allBranches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
             ))}
-          </tbody>
-        </table>
-      </details>
-    </main>
-  );
-}
-
-function RankingTableMini({ rows, userMap, me }) {
-  if (!rows.length) return <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Sin datos.</p>;
-  return (
-    <div style={{ display: 'grid', gap: 6 }}>
-      {rows.map((r, i) => (
-        <div key={r.user_id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.83rem', fontWeight: r.user_id === me ? 700 : 400 }}>
-          <span>
-            {['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`} {userMap[r.user_id]?.name ?? 'Usuario'}
-            {r.user_id === me ? ' (tú)' : ''}
-          </span>
-          <span>{num(r.leads_contacted)}</span>
+          </select>
         </div>
-      ))}
+      )}
+      <div className="field-wrap">
+        <Icon name="user" size={15} />
+        <select className="input select-pill" style={{ height: 38 }} value={userId} onChange={(e) => setUserId(e.target.value)} aria-label="Asesor">
+          <option value="">Todo el equipo</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
+  );
+
+  return (
+    <main className="dash-page">
+      <Hero name={firstName} right={filters} />
+      {error && <p style={{ color: 'var(--color-danger)', margin: '0 0 12px' }}>{error}</p>}
+
+      {/* Indicadores */}
+      <div className="kpi-grid">
+        <KpiCard icon="users" color={COLORS.blue} label="Leads nuevos" value={kpis ? num(kpis.leads_new) : '—'} trend={kpis && prevKpis ? trend(kpis.leads_new, prevKpis.leads_new) : null} spark={spark('leads_new')} href="/leads" />
+        <KpiCard
+          icon="phone-call"
+          color={COLORS.green}
+          label="Contactados"
+          value={kpis ? num(kpis.leads_contacted) : '—'}
+          sub={kpis ? `${pct(kpis.new_contacted, kpis.leads_new)} tasa de contacto` : null}
+          spark={spark('leads_contacted')}
+        />
+        <KpiCard icon="ban" color={COLORS.red} label="Sin contacto" value={kpis ? num(kpis.leads_no_contact) : '—'} sub={kpis ? `Sin asignar: ${num(kpis.leads_unassigned)}` : null} href="/leads" />
+        <KpiCard
+          icon="phone"
+          color={COLORS.purple}
+          label="Llamadas"
+          value={kpis ? num(kpis.calls_total) : '—'}
+          sub={kpis ? `Contestadas: ${num(kpis.calls_answered)} (${pct(kpis.calls_answered, kpis.calls_total)})` : null}
+          spark={spark('calls')}
+          href="/llamadas"
+        />
+        <KpiCard icon="message-circle" color={COLORS.wa} label="WhatsApp" value={kpis ? num(kpis.wa_received) : '—'} sub={kpis ? `Recibidos · enviados: ${num(kpis.wa_sent)}` : null} spark={spark('wa_received')} href="/whatsapp" />
+        <KpiCard icon="trophy" color={COLORS.gold} label="Oportunidades" value={kpis ? num(kpis.opps_open) : '—'} sub={kpis ? money(kpis.opps_open_value, cur) : null} href="/funnels" />
+      </div>
+
+      {/* Gráficos */}
+      <div className="dash-grid-2">
+        <Panel icon="chart-column" title="Leads nuevos por día" action={<MiniSelect value={preset} onChange={setPreset} options={PERIODS} label="Período" />}>
+          <BarsChart rows={daily} field="leads_new" />
+        </Panel>
+        <Panel
+          icon="filter"
+          title="Conversión por etapa"
+          action={
+            fconfig.funnels.length > 1 ? (
+              <MiniSelect value={funnelId} onChange={setFunnelId} options={fconfig.funnels.map((x) => ({ key: x.id, label: x.name }))} label="Embudo" />
+            ) : null
+          }
+        >
+          <StageBars stages={funnel} />
+        </Panel>
+      </div>
+
+      {/* Tareas, leads y equipo */}
+      <div className="dash-grid-3">
+        <Panel icon="square-check-big" title="Tareas de hoy" count={today.length || null} action={<LinkAction href="/tareas">Ver todas</LinkAction>}>
+          <TodayTasks tasks={today} />
+        </Panel>
+        {can('leads.view') && (
+          <Panel
+            icon="users"
+            title="Leads recientes"
+            action={
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <MiniSelect
+                  value={leadsView}
+                  onChange={setLeadsView}
+                  label="Leads"
+                  options={[
+                    { key: 'all', label: 'Todos' },
+                    { key: 'mine', label: 'Míos' },
+                    { key: 'unassigned', label: 'Sin asignar' },
+                  ]}
+                />
+                <LinkAction href="/leads">Ver todos</LinkAction>
+              </div>
+            }
+          >
+            <RecentLeads leads={leads} statusMap={config.maps.status} sourceMap={config.maps.source} />
+          </Panel>
+        )}
+        <Panel icon="trophy" title="Top del equipo" action={<MiniSelect value={teamMetric} onChange={setTeamMetric} options={TEAM_METRICS} label="Métrica" />}>
+          <TeamTop rows={ranking} metric={teamMetric} userMap={config.maps.user} me={user?.id} />
+        </Panel>
+      </div>
+
+      {/* Actividad, metas y reportes */}
+      <div className="dash-grid-3">
+        <Panel icon="activity" title="Actividad reciente" action={can('audit.view') ? <LinkAction href="/settings/actividad">Ver toda la actividad</LinkAction> : null}>
+          <div className="chip-row" role="tablist">
+            {ACTIVITY_FILTERS.map((x) => (
+              <button key={x.key} role="tab" aria-selected={actFilter === x.key} className={`chip${actFilter === x.key ? ' active' : ''}`} onClick={() => setActFilter(x.key)}>
+                {x.label}
+              </button>
+            ))}
+          </div>
+          <ActivityFeed items={activity} />
+        </Panel>
+        <Panel icon="target" title="Metas del mes" action={can('goals.manage') ? <LinkAction href="/reportes?tab=metas">Editar metas</LinkAction> : null}>
+          <MonthGoals rows={goals} money={(v) => money(v, cur)} />
+        </Panel>
+        <PromoCard />
+      </div>
+    </main>
   );
 }

@@ -10,6 +10,7 @@ import { SettingsHeader, errorText } from '../../components/settings/settingsTab
 import { supabase } from '../../lib/supabase/client';
 import { signOut } from '../../lib/supabase/auth';
 import { useSession } from '../../lib/auth/sessionContext';
+import OrgLogoCard from '../../components/settings/orgLogoCard';
 
 const SCOPE_LABEL = { own: 'Propio', branch: 'Sucursal', organization: 'Organización' };
 
@@ -89,6 +90,8 @@ export default function AccountPage() {
             </button>
           </div>
         </form>
+
+        <OrgLogoCard />
 
         <div className="card">
           <h3 style={{ fontSize: '0.95rem', marginBottom: '0.7rem' }}>Acceso</h3>

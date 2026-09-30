@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { listNotifications, markNotificationsRead, useNotifications } from '../../lib/automations/api';
 import { relTime } from '../../lib/leads/format';
+import Icon from './icon';
 
 export default function NotificationsBell({ userId }) {
   const { unread, reload } = useNotifications(userId);
@@ -46,12 +47,12 @@ export default function NotificationsBell({ userId }) {
         onClick={() => setOpen((v) => !v)}
         aria-label={unread ? `${unread} notificaciones sin leer` : 'Notificaciones'}
         title="Notificaciones"
-        style={{ position: 'relative', width: 34, height: 34, borderRadius: 999, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', cursor: 'pointer', fontSize: '1rem' }}
+        className="topbar-icon"
       >
-        🔔
+        <Icon name="bell" size={20} />
         {unread > 0 && (
           <span
-            style={{ position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--color-danger)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ position: 'absolute', top: 1, right: 1, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--color-danger)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
           >
             {unread > 99 ? '99+' : unread}
           </span>
@@ -61,7 +62,7 @@ export default function NotificationsBell({ userId }) {
       {open && (
         <div
           className="card"
-          style={{ position: 'fixed', top: 58, left: 12, width: 340, maxWidth: 'calc(100vw - 24px)', maxHeight: '70vh', overflowY: 'auto', padding: 0, zIndex: 60, boxShadow: '0 12px 32px rgba(0,0,0,0.18)' }}
+          style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340, maxWidth: 'calc(100vw - 24px)', maxHeight: '70vh', overflowY: 'auto', padding: 0, zIndex: 60, boxShadow: '0 12px 32px rgba(0,0,0,0.18)' }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 0.9rem', borderBottom: '1px solid var(--color-border)' }}>
             <strong style={{ fontSize: '0.9rem' }}>Notificaciones</strong>
