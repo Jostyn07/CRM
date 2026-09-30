@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import RequirePermission from '../../../components/ui/requirePermission';
 import Modal from '../../../components/ui/modal';
+import Icon, { IconText } from '../../../components/ui/icon';
 import { SettingsHeader, bodyRow, cell, errorText, headRow } from '../../../components/settings/settingsTabs';
+import { setUserPortals } from '../../../lib/clients/api';
 import { supabase } from '../../../lib/supabase/client';
 import { useSession } from '../../../lib/auth/sessionContext';
 import { trackEvent } from '../../../lib/activity/tracker';
@@ -29,7 +31,7 @@ export default function UsersPage() {
 }
 
 async function loadAll() {
-  const [p, ub, ur, r, b, perms, up, mu, gr] = await Promise.all([
+  const [p, ub, ur, r, b, perms, up, mu, gr, pt, upt] = await Promise.all([
     supabase.from('profiles').select('id, full_name, email, phone, status, created_at').order('full_name'),
     supabase.from('user_branches').select('user_id, branch_id, is_primary'),
     supabase.from('user_roles').select('user_id, role_id'),
@@ -39,6 +41,8 @@ async function loadAll() {
     supabase.from('user_permissions').select('user_id, permission_key, effect, scope'),
     supabase.rpc('get_manageable_user_ids'),
     supabase.rpc('get_grantable_role_ids'),
+    supabase.from('client_portals').select('portal_key, name, branch_id').order('name'),
+    supabase.from('user_portals').select('user_id, portal_key'),
   ]);
   const err = [p, ub, ur, r, b, perms].find((x) => x.error)?.error;
   if (err) throw err;
@@ -47,6 +51,7 @@ async function loadAll() {
   const branchesOf = byUser(ub.data);
   const rolesOf = byUser(ur.data);
   const overridesOf = byUser(up.data ?? []);
+  const portalsOf = byUser(upt.data ?? []);
   const manageable = new Set((mu.data ?? []).map((x) => (typeof x === 'string' ? x : Object.values(x)[0])));
   const grantable = new Set((gr.data ?? []).map((x) => (typeof x === 'string' ? x : Object.values(x)[0])));
 
@@ -57,12 +62,15 @@ async function loadAll() {
       branchIds: (branchesOf[u.id] ?? []).sort((a, b) => b.is_primary - a.is_primary).map((x) => x.branch_id),
       roleIds: (rolesOf[u.id] ?? []).map((x) => x.role_id),
       overrides: overridesOf[u.id] ?? [],
+      portalKeys: (portalsOf[u.id] ?? []).map((x) => x.portal_key),
       canManage: manageable.has(u.id),
     })),
     roles: r.data,
     grantableRoles: r.data.filter((x) => grantable.has(x.id)),
     branches: b.data,
     permissions: perms.data,
+    // Portales de Asesorías (si la fuente de clientes está conectada)
+    portals: (pt.error ? [] : pt.data ?? []).map((x) => ({ ...x, branch_name: b.data.find((br) => br.id === x.branch_id)?.name ?? null })),
   };
 }
 
@@ -174,6 +182,7 @@ function Users() {
               <th style={cell}>Nombre</th>
               <th style={cell}>Rol</th>
               <th style={cell}>Sucursales</th>
+              {data?.portals.length > 0 && <th style={cell}>Portales</th>}
               <th style={cell}>Permisos individuales</th>
               <th style={cell}>Estado</th>
               <th style={cell} />
@@ -182,14 +191,14 @@ function Users() {
           <tbody>
             {!data && (
               <tr>
-                <td colSpan={6} style={{ ...cell, textAlign: 'center', padding: '1.5rem' }}>
+                <td colSpan={7} style={{ ...cell, textAlign: 'center', padding: '1.5rem' }}>
                   Cargando…
                 </td>
               </tr>
             )}
             {data && rows.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ ...cell, textAlign: 'center', padding: '1.5rem', color: 'var(--color-text-muted)' }}>
+                <td colSpan={7} style={{ ...cell, textAlign: 'center', padding: '1.5rem', color: 'var(--color-text-muted)' }}>
                   No hay usuarios que coincidan.
                 </td>
               </tr>
@@ -205,6 +214,7 @@ function Users() {
                 </td>
                 <td style={cell}>{u.roleIds.map(roleName).join(', ') || '—'}</td>
                 <td style={cell}>{u.branchIds.map(branchName).join(', ') || '—'}</td>
+                {data.portals.length > 0 && <td style={cell}>{u.portalKeys.map((k) => data.portals.find((p) => p.portal_key === k)?.name ?? k).join(', ') || '—'}</td>}
                 <td style={cell}>{u.overrides.length ? `${u.overrides.length} excepción(es)` : '—'}</td>
                 <td style={cell}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -275,6 +285,36 @@ function BranchChecklist({ branches, value, onChange, allowed }) {
   );
 }
 
+// Portales de Asesorías del usuario: separan los clientes entre sucursales.
+// Con portales asignados, un admin de sucursal ve solo los clientes de esos
+// portales; sin portales, ve los de los portales de sus sucursales.
+function PortalChecklist({ portals, value, onChange }) {
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 6, fontWeight: 600 }}>Portales de Asesorías</span>
+      {portals.length === 0 && (
+        <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Aún no hay portales: aparecen al sincronizar los clientes de Asesorías.</p>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        {portals.map((p) => (
+          <label key={p.portal_key} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: '0.86rem' }}>
+            <input
+              type="checkbox"
+              checked={value.includes(p.portal_key)}
+              onChange={(e) => onChange(e.target.checked ? [...value, p.portal_key] : value.filter((x) => x !== p.portal_key))}
+            />
+            {p.name}
+            {p.branch_name && <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>({p.branch_name})</span>}
+          </label>
+        ))}
+      </div>
+      <p style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
+        Solo administradores de sucursal y supervisores ven clientes por portal. Sin portales marcados, ven los de los portales de sus sucursales.
+      </p>
+    </div>
+  );
+}
+
 function useBranchAllowed() {
   const { scopeOf, branches: mine } = useSession();
   const orgScope = scopeOf('users.manage') === 'organization';
@@ -318,7 +358,7 @@ function PasswordField({ value, onChange, autoFocus }) {
           style={{ flex: 1 }}
         />
         <button type="button" className="btn btn-secondary" onClick={() => setShow((v) => !v)} title={show ? 'Ocultar' : 'Mostrar'}>
-          {show ? '🙈' : '👁️'}
+          <Icon name={show ? 'eye-off' : 'eye'} size={16} />
         </button>
         <button
           type="button"
@@ -342,7 +382,7 @@ function PasswordField({ value, onChange, autoFocus }) {
             } catch {}
           }}
         >
-          {copied ? '✓' : 'Copiar'}
+          {copied ? <IconText name="check" size={14}>Copiado</IconText> : <IconText name="copy" size={14}>Copiar</IconText>}
         </button>
       </div>
     </div>
@@ -352,6 +392,7 @@ function PasswordField({ value, onChange, autoFocus }) {
 function InviteForm({ data, onDone }) {
   const allowed = useBranchAllowed();
   const [v, setV] = useState({ full_name: '', email: '', role_key: 'operator', branch_ids: [], password: '' });
+  const [portalKeys, setPortalKeys] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -362,9 +403,19 @@ function InviteForm({ data, onDone }) {
     const pw = passwordProblem(v.password);
     if (pw) return setError(pw);
     setSaving(true);
-    const { error: fnErr } = await supabase.functions.invoke('invite-user', { body: v });
+    const { data: created, error: fnErr } = await supabase.functions.invoke('invite-user', { body: v });
+    if (fnErr) {
+      setSaving(false);
+      return setError(await errorText(fnErr, 'No se pudo crear el usuario.'));
+    }
+    if (portalKeys.length && created?.user_id) {
+      try {
+        await setUserPortals(created.user_id, portalKeys);
+      } catch (e) {
+        window.alert(`El usuario se creó, pero no se pudieron asignar los portales: ${e.message}`);
+      }
+    }
     setSaving(false);
-    if (fnErr) return setError(await errorText(fnErr, 'No se pudo crear el usuario.'));
     trackEvent('user.created', { metadata: { role_key: v.role_key, branches: v.branch_ids.length } });
     window.alert(`Usuario creado.\n\nCorreo: ${v.email}\nContraseña: ${v.password}\n\nEntrégale estos datos por un medio seguro.`);
     onDone();
@@ -394,6 +445,7 @@ function InviteForm({ data, onDone }) {
         <span style={{ display: 'block', fontSize: '0.85rem', marginBottom: 6 }}>Sucursales</span>
         <BranchChecklist branches={data.branches} value={v.branch_ids} onChange={(ids) => setV({ ...v, branch_ids: ids })} allowed={allowed} />
       </div>
+      <PortalChecklist portals={data.portals} value={portalKeys} onChange={setPortalKeys} />
       <label style={{ display: 'block', marginBottom: '0.7rem' }}>
         <span style={{ fontSize: '0.85rem' }}>Contraseña</span>
         <PasswordField value={v.password} onChange={(password) => setV({ ...v, password })} />
@@ -415,6 +467,7 @@ function EditUser({ user, data, onClose, onSaved }) {
   const [status, setStatus] = useState(user.status);
   const [roleId, setRoleId] = useState(user.roleIds[0] ?? '');
   const [branchIds, setBranchIds] = useState(user.branchIds);
+  const [portalKeys, setPortalKeys] = useState(user.portalKeys);
   const [overrides, setOverrides] = useState(() => Object.fromEntries(user.overrides.map((o) => [o.permission_key, o])));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -467,6 +520,9 @@ function EditUser({ user, data, onClose, onSaved }) {
         const { error: e } = await supabase.from('user_branches').delete().eq('user_id', user.id).in('branch_id', remove);
         if (e) throw e;
       }
+      // Portales de Asesorías
+      const samePortals = portalKeys.length === user.portalKeys.length && portalKeys.every((k) => user.portalKeys.includes(k));
+      if (!samePortals) await setUserPortals(user.id, portalKeys);
       // Permisos individuales
       const before = Object.fromEntries(user.overrides.map((o) => [o.permission_key, o]));
       const changedKeys = new Set([...Object.keys(before), ...Object.keys(overrides)]);
@@ -539,6 +595,7 @@ function EditUser({ user, data, onClose, onSaved }) {
         <span style={label}>Sucursales</span>
         <BranchChecklist branches={data.branches} value={branchIds} onChange={setBranchIds} allowed={allowed} />
       </div>
+      <PortalChecklist portals={data.portals} value={portalKeys} onChange={setPortalKeys} />
 
       <span style={label}>Permisos individuales</span>
       <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: 8 }}>
@@ -592,7 +649,7 @@ function EditUser({ user, data, onClose, onSaved }) {
           </div>
         ) : (
           <button className="btn btn-secondary" onClick={() => setPwOpen(true)} disabled={saving}>
-            🔑 Cambiar contraseña
+            <IconText name="key-round" size={15}>Cambiar contraseña</IconText>
           </button>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
