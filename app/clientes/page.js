@@ -2,6 +2,8 @@
 // Ruta: app/clientes/page.js
 // Clientes traídos de Asesorías, cruzados con los leads de la plataforma:
 // cuáles ya están (y en qué lead), cuáles no, y números compartidos (familias).
+// Cada cliente pertenece a un portal de Asesorías y cada portal a una sucursal.
+// Los clientes no aparecen en la lista de Leads.
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import RequirePermission from '../../components/ui/requirePermission';
@@ -10,7 +12,7 @@ import ClientCard from '../../components/clients/clientCard';
 import { useSession } from '../../lib/auth/sessionContext';
 import { trackEvent } from '../../lib/activity/tracker';
 import { relTime } from '../../lib/leads/format';
-import { createLeadFromClient, listClients, saveSource, sourceStatus, syncNow } from '../../lib/clients/api';
+import { listClients, listPortals, saveSource, setPortalBranch, sourceStatus, syncNow } from '../../lib/clients/api';
 import { supabase } from '../../lib/supabase/client';
 
 const FILTERS = [
@@ -32,7 +34,7 @@ export default function ClientsPage() {
 }
 
 function Clients() {
-  const { can, branches } = useSession();
+  const { can } = useSession();
   const [status, setStatus] = useState(null);
   const [rows, setRows] = useState(null);
   const [total, setTotal] = useState(0);
@@ -46,21 +48,27 @@ function Clients() {
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [portal, setPortal] = useState('');
+  const [portals, setPortals] = useState([]);
+  const [portalsOpen, setPortalsOpen] = useState(false);
 
   const loadStatus = useCallback(() => sourceStatus().then(setStatus).catch((e) => setError(e.message)), []);
   const load = useCallback(async () => {
     try {
-      const r = await listClients({ search: q, filter, page, pageSize: PAGE, archived });
+      const r = await listClients({ search: q, filter, page, pageSize: PAGE, archived, portal });
       setRows(r ?? []);
       setTotal(Number(r?.[0]?.total ?? 0));
     } catch (e) {
       setError(e.message);
     }
-  }, [q, filter, page, archived]);
+  }, [q, filter, page, archived, portal]);
+
+  const loadPortals = useCallback(() => listPortals().then((p) => setPortals(p ?? [])).catch(() => {}), []);
 
   useEffect(() => {
     loadStatus();
-  }, [loadStatus]);
+    loadPortals();
+  }, [loadStatus, loadPortals]);
   useEffect(() => {
     load();
   }, [load]);
@@ -78,9 +86,10 @@ function Clients() {
     setError(null);
     try {
       const r = await syncNow(full);
-      setMsg(`Sincronización lista: ${r.count ?? 0} cliente(s) ${full ? 'importados' : 'nuevos o actualizados'}.`);
+      setMsg(`Sincronización lista: ${r.count ?? 0} cliente(s) ${full ? 'actualizados' : 'nuevos o con cambios'}.`);
       trackEvent('clients.sync', { metadata: { full, count: r.count } });
       loadStatus();
+      loadPortals();
       load();
     } catch (e) {
       setError(e.message);
@@ -98,20 +107,6 @@ function Clients() {
     }
   }
 
-  async function toLead(c) {
-    const branch = branches.length === 1 ? branches[0].id : null;
-    try {
-      const r = await createLeadFromClient(c.id, branch);
-      if (r?.duplicate) setError('Ya existe un lead con ese teléfono o correo.');
-      else if (r?.ok) {
-        trackEvent('clients.lead_created', { entityType: 'clients', entityId: c.id });
-        window.location.href = `/leads/${r.lead_id}`;
-      }
-    } catch (e) {
-      setError(e.message.includes('sucursal') ? 'Tienes varias sucursales: crea el lead desde Leads eligiendo la sucursal.' : e.message);
-    }
-  }
-
   const pages = Math.max(1, Math.ceil(total / PAGE));
 
   return (
@@ -120,7 +115,7 @@ function Clients() {
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Clientes</h1>
           <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)' }}>
-            Traídos de Asesorías (solo lectura) y cruzados con los leads por teléfono y correo.
+            Traídos de Asesorías (solo lectura) y cruzados con los leads por teléfono y correo. Se actualizan solos todos los días a las 7:00 a. m. y a las 12:00 m. Los clientes no aparecen en Leads.
             {status?.last_sync_at && ` Última sincronización ${relTime(status.last_sync_at)}.`}
             {status?.connected && ` ${status.total_local} en la plataforma${status.total_remote ? ` de ${status.total_remote} en Asesorías` : ''}.`}
           </p>
@@ -130,13 +125,18 @@ function Clients() {
             <button className="btn btn-secondary" onClick={() => setConfig(true)}>
               ⚙️ Conexión
             </button>
+            {portals.length > 0 && (
+              <button className="btn btn-secondary" onClick={() => setPortalsOpen(true)}>
+                🏢 Portales
+              </button>
+            )}
             {status?.connected && (
               <>
-                <button className="btn btn-secondary" disabled={syncing} onClick={() => sync(true)} title="Vuelve a traer todos los clientes">
-                  Traer todo
+                <button className="btn btn-secondary" disabled={syncing} onClick={() => sync(false)} title="Solo los clientes que cambiaron en Asesorías">
+                  Solo cambios
                 </button>
-                <button className="btn btn-primary" disabled={syncing} onClick={() => sync(false)}>
-                  {syncing ? 'Sincronizando…' : '🔄 Sincronizar'}
+                <button className="btn btn-primary" disabled={syncing} onClick={() => sync(true)} title="Actualiza todos los clientes (pólizas y dependientes incluidos)">
+                  {syncing ? 'Sincronizando…' : '🔄 Sincronizar todo'}
                 </button>
               </>
             )}
@@ -172,6 +172,25 @@ function Clients() {
             </button>
           ))}
         </div>
+        {portals.length > 0 && (
+          <select
+            className="input"
+            style={{ width: 200 }}
+            value={portal}
+            onChange={(e) => {
+              setPortal(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Todos los portales</option>
+            {portals.map((p) => (
+              <option key={p.portal_key} value={p.portal_key}>
+                {p.name}
+              </option>
+            ))}
+            <option value="__none__">Sin portal</option>
+          </select>
+        )}
         <label style={{ fontSize: '0.82rem', display: 'flex', gap: 4, alignItems: 'center' }}>
           <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Incluir archivados
         </label>
@@ -185,6 +204,7 @@ function Clients() {
               <th style={{ padding: '0.55rem 0.7rem' }}>Teléfono</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>Póliza más reciente</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>Dependientes</th>
+              <th style={{ padding: '0.55rem 0.7rem' }}>Portal</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>Operador</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>En la plataforma</th>
             </tr>
@@ -192,14 +212,14 @@ function Clients() {
           <tbody>
             {rows === null && (
               <tr>
-                <td colSpan={6} style={{ padding: '1.2rem', textAlign: 'center' }}>
+                <td colSpan={7} style={{ padding: '1.2rem', textAlign: 'center' }}>
                   Cargando…
                 </td>
               </tr>
             )}
             {rows?.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                <td colSpan={7} style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                   No hay clientes con ese filtro.
                 </td>
               </tr>
@@ -222,14 +242,11 @@ function Clients() {
                 </td>
                 <td style={{ padding: '0.5rem 0.7rem' }}>{c.active_policy || (c.policies_count ? `${c.policies_count} póliza(s)` : '—')}</td>
                 <td style={{ padding: '0.5rem 0.7rem' }}>{c.dependents_count || '—'}</td>
+                <td style={{ padding: '0.5rem 0.7rem' }}>{c.portal || '—'}</td>
                 <td style={{ padding: '0.5rem 0.7rem' }}>{c.operator_name || '—'}</td>
                 <td style={{ padding: '0.5rem 0.7rem' }} onClick={(e) => e.stopPropagation()}>
                   {c.lead_ids?.length ? (
                     <a href={`/leads/${c.lead_ids[0]}?tab=cliente`}>✅ Ver lead{c.lead_ids.length > 1 ? ` (+${c.lead_ids.length - 1})` : ''}</a>
-                  ) : can('leads.create') ? (
-                    <button className="btn btn-secondary" style={{ height: 28, fontSize: '0.78rem' }} onClick={() => toLead(c)}>
-                      + Crear lead
-                    </button>
                   ) : (
                     <span style={{ color: '#d97706' }}>No está</span>
                   )}
@@ -254,6 +271,18 @@ function Clients() {
 
       <Modal open={!!open} onClose={() => setOpen(null)} title="Cliente" width={860}>
         {open && <ClientCard client={open} />}
+      </Modal>
+      <Modal open={portalsOpen} onClose={() => setPortalsOpen(false)} title="Portales de Asesorías" width={620}>
+        {portalsOpen && (
+          <PortalsForm
+            portals={portals}
+            canEdit={can('clients.manage')}
+            onChanged={() => {
+              loadPortals();
+              load();
+            }}
+          />
+        )}
       </Modal>
       <Modal open={config} onClose={() => setConfig(false)} title="Conexión con Asesorías" width={560}>
         {config && (
@@ -303,7 +332,7 @@ function SourceForm({ status, onSaved }) {
         <input className="input" type="password" autoComplete="new-password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ast_…" required={!status?.connected} />
       </label>
       <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: '0.85rem' }}>
-        <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Sincronizar automáticamente (si se programó la tarea)
+        <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Sincronizar automáticamente (todos los días 7:00 a. m. y 12:00 m.)
       </label>
       <p style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>El token se guarda solo en el servidor; nadie puede volver a verlo desde la plataforma.</p>
       {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.84rem' }}>{error}</p>}
@@ -311,5 +340,77 @@ function SourceForm({ status, onSaved }) {
         {busy ? 'Guardando…' : 'Guardar'}
       </button>
     </form>
+  );
+}
+
+// Cada portal de Asesorías pertenece a una sucursal: define qué clientes ve
+// cada administrador de sucursal.
+function PortalsForm({ portals, canEdit, onChanged }) {
+  const [branches, setBranches] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    supabase
+      .from('branches')
+      .select('id, name, status')
+      .order('name')
+      .then(({ data }) => setBranches((data ?? []).filter((b) => b.status === 'active')));
+  }, []);
+
+  async function change(p, branchId) {
+    setBusy(p.portal_key);
+    setError(null);
+    try {
+      await setPortalBranch(p.portal_key, branchId);
+      trackEvent('clients.portal_branch', { metadata: { portal: p.portal_key, branch_id: branchId || null } });
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: 10 }}>
+        Los portales llegan con los clientes de Asesorías. Asigna cada uno a su sucursal: los administradores de esa sucursal verán sus clientes. A un usuario también se le pueden asignar portales en Configuración → Usuarios.
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', color: 'var(--color-text-muted)', fontSize: '0.78rem', borderBottom: '1px solid var(--color-border)' }}>
+            <th style={{ padding: '0.4rem' }}>Portal</th>
+            <th style={{ padding: '0.4rem' }}>Clientes</th>
+            <th style={{ padding: '0.4rem' }}>Usuarios</th>
+            <th style={{ padding: '0.4rem' }}>Sucursal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {portals.map((p) => (
+            <tr key={p.portal_key} style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <td style={{ padding: '0.4rem', fontWeight: 600 }}>{p.name}</td>
+              <td style={{ padding: '0.4rem' }}>{p.clients_count}</td>
+              <td style={{ padding: '0.4rem' }}>{p.users_count}</td>
+              <td style={{ padding: '0.4rem' }}>
+                {canEdit ? (
+                  <select className="input" style={{ height: 32 }} disabled={busy === p.portal_key} value={p.branch_id ?? ''} onChange={(e) => change(p, e.target.value)}>
+                    <option value="">Sin sucursal</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  p.branch_name || 'Sin sucursal'
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.84rem', marginTop: 8 }}>{error}</p>}
+    </div>
   );
 }
