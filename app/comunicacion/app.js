@@ -23,6 +23,8 @@ import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
   listConversations, listStickers, markRead, openDirect, openNotes, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
+import { playSent } from '../../lib/sounds';
+import SoundToggle from '../../components/ui/soundToggle';
 
 function Avatar({ name, size = 34, group, icon }) {
   const c = getAvatarColors(name);
@@ -328,6 +330,7 @@ export default function ComunicacionApp() {
     } else if (text) {
       addLocal(await sendMessage(conv, { body: text, reply_to_id: replyId }));
     }
+    playSent();
     loadConversations();
   }
 
@@ -403,6 +406,7 @@ export default function ComunicacionApp() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: 8, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: '1.3rem' }}>Comunicación interna</h1>
         <div style={{ display: 'flex', gap: 8 }}>
+          <SoundToggle />
           {notifPerm === 'default' && (
             <button className="btn btn-secondary" onClick={enableNotifications}>
               <IconText name="bell" size={16}>Activar avisos</IconText>
@@ -652,6 +656,7 @@ export default function ComunicacionApp() {
         me={me}
         orgId={orgId}
         onDone={(n) => {
+          playSent();
           trackEvent('chat.forward', { entityType: 'chat_messages', entityId: forwardMsg?.id, metadata: { targets: n } });
           setForwardMsg(null);
           setToast(n > 1 ? `Reenviado a ${n} chats` : 'Reenviado');

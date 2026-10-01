@@ -11,9 +11,11 @@ import { trackEvent } from '../../lib/activity/tracker';
 import { renderFormatted } from '../../lib/chat/format';
 import { diaSeparador, hora } from '../../lib/chat/api';
 import EmojiPicker from '../chat/emojiPicker';
+import Icon, { IconText, StatusDot } from '../ui/icon';
 import WaClientBar from '../clients/waClientBar';
 import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
 import { WA_MAX_BYTES, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
+import { playSent } from '../../lib/sounds';
 
 function Media({ m }) {
   const url = useMediaUrl(m);
@@ -23,18 +25,18 @@ function Media({ m }) {
   if (m.kind === 'audio') return <audio src={url} controls preload="metadata" style={{ display: 'block', width: 260 }} />;
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'inherit' }}>
-      <span style={{ fontSize: '1.5rem' }}>📄</span>
+      <Icon name="file-text" size={24} />
       <span style={{ textDecoration: 'underline' }}>{m.media_name || 'Documento'}</span>
     </a>
   );
 }
 
 function Ticks({ status, error }) {
-  if (status === 'pending') return <span title="Enviando…">🕓</span>;
-  if (status === 'error') return <span title={error || 'Error al enviar'} style={{ color: '#fecaca' }}>⚠</span>;
-  if (status === 'read') return <span title="Leído" style={{ color: '#7dd3fc', fontWeight: 700, letterSpacing: -3, paddingRight: 3 }}>✓✓</span>;
-  if (status === 'delivered') return <span title="Entregado" style={{ fontWeight: 700, letterSpacing: -3, paddingRight: 3 }}>✓✓</span>;
-  return <span title="Enviado" style={{ fontWeight: 700 }}>✓</span>;
+  if (status === 'pending') return <Icon name="clock" size={14} title="Enviando…" style={{ verticalAlign: '-2px' }} />;
+  if (status === 'error') return <span title={error || 'Error al enviar'} style={{ color: '#fecaca', display: 'inline-flex' }}><Icon name="triangle-alert" size={14} /></span>;
+  if (status === 'read') return <span title="Leído" style={{ color: '#7dd3fc', display: 'inline-flex' }}><Icon name="check-check" size={14} /></span>;
+  if (status === 'delivered') return <span title="Entregado" style={{ display: 'inline-flex' }}><Icon name="check-check" size={14} /></span>;
+  return <span title="Enviado" style={{ display: 'inline-flex' }}><Icon name="check" size={14} /></span>;
 }
 
 export default function WaThread({ conversationId, orgId, userMap, canSend = true, height = '100%' }) {
@@ -122,6 +124,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
       } else {
         await sendText(conversationId, body, replyTo?.id);
       }
+      playSent();
       trackEvent('whatsapp.sent', { entityType: 'wa_conversations', entityId: conversationId, metadata: { files: files.length } });
       setText('');
       setFiles([]);
@@ -194,7 +197,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                 >
                   {out && (
                     <div style={{ fontSize: '0.68rem', opacity: 0.8, marginBottom: 2, padding: m.kind === 'text' ? 0 : '2px 6px 0' }}>
-                      {m.sender_user_id ? userMap[m.sender_user_id]?.name ?? 'Usuario' : m.from_phone_app ? '📱 Desde el celular' : ''}
+                      {m.sender_user_id ? userMap[m.sender_user_id]?.name ?? 'Usuario' : m.from_phone_app ? <IconText name="smartphone" size={12} gap={4}>Desde el celular</IconText> : ''}
                     </div>
                   )}
                   {quoted && (
@@ -203,7 +206,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                     </div>
                   )}
                   {(m.media_path || m.media_url) && <Media m={m} />}
-                  {m.kind === 'missing_call' && <div>📞 Llamada perdida de WhatsApp</div>}
+                  {m.kind === 'missing_call' && <div><IconText name="phone-missed" size={16}>Llamada perdida de WhatsApp</IconText></div>}
                   {m.body && (
                     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', padding: m.kind === 'text' ? 0 : '4px 6px 0' }}>
                       {m.is_deleted ? <em>Mensaje eliminado</em> : renderFormatted(m.body)}
@@ -216,7 +219,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                         title={`Clasificado por IA · urgencia ${URGENCY[m.ai_urgency] ?? ''}`}
                         style={{ padding: '0 6px', borderRadius: 999, color: '#fff', background: INTENTS[m.ai_intent].color, opacity: 0.9 }}
                       >
-                        {m.ai_urgency === 'alta' ? '🔴 ' : ''}
+                        {m.ai_urgency === 'alta' ? <StatusDot color="#ef4444" size={7} style={{ marginRight: 4 }} /> : ''}
                         {INTENTS[m.ai_intent].label}
                       </span>
                     )}
@@ -224,7 +227,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                     <span>{hora(m.created_at)}</span>
                     {out && <Ticks status={m.status} error={m.error} />}
                   </div>
-                  {out && m.status === 'error' && m.error && <div style={{ fontSize: '0.7rem', marginTop: 2 }}>⚠ {m.error}</div>}
+                  {out && m.status === 'error' && m.error && <div style={{ fontSize: '0.7rem', marginTop: 2 }}><IconText name="triangle-alert" size={12} gap={4}>{m.error}</IconText></div>}
                 </div>
               </div>
             );
@@ -254,7 +257,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
               {files.map((f, i) => (
                 <span key={i} style={{ fontSize: '0.75rem', padding: '3px 8px', borderRadius: 999, background: 'var(--color-active-bg)' }}>
-                  📎 {f.name}{' '}
+                  <Icon name="paperclip" size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} />{f.name}{' '}
                   <button style={{ ...iconBtn, fontSize: '0.8rem', padding: 0 }} onClick={() => setFiles((p) => p.filter((_, j) => j !== i))}>
                     ×
                   </button>
@@ -265,7 +268,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
           {ai && (
             <div style={{ marginBottom: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid #8b5cf6', background: 'var(--color-active-bg)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: 4 }}>
-                <span>✨ Respuestas sugeridas · elige una para editarla antes de enviar</span>
+                <IconText name="sparkles" size={14}>Respuestas sugeridas · elige una para editarla antes de enviar</IconText>
                 <button style={{ ...iconBtn, fontSize: '0.8rem', padding: 0 }} onClick={() => setAi(null)}>
                   ×
                 </button>
@@ -304,12 +307,12 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                   }
                 }}
               >
-                ✨
+                <Icon name="sparkles" size={18} />
               </button>
             )}
             <div style={{ position: 'relative' }}>
               <button style={iconBtn} title="Emojis" onClick={() => setEmoji((v) => !v)}>
-                😊
+                <Icon name="smile" size={18} />
               </button>
               {emoji && (
                 <EmojiPicker
@@ -323,7 +326,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
               )}
             </div>
             <button style={iconBtn} title="Adjuntar (máx. 10 MB)" onClick={() => fileRef.current?.click()}>
-              📎
+              <Icon name="paperclip" size={18} />
             </button>
             <input
               ref={fileRef}

@@ -9,12 +9,14 @@ import RequirePermission from '../../components/ui/requirePermission';
 import WaThread from '../../components/whatsapp/waThread';
 import WazzupFrame from '../../components/whatsapp/wazzupFrame';
 import WaModeToggle from '../../components/whatsapp/waModeToggle';
+import Icon, { IconText, StatusDot } from '../../components/ui/icon';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
 import { fechaCorta } from '../../lib/chat/api';
 import { formatChat, listChannels, listConversations, useWaMode } from '../../lib/whatsapp/api';
+import SoundToggle from '../../components/ui/soundToggle';
 
 export default function WhatsappPage() {
   return (
@@ -95,6 +97,7 @@ function Inbox() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: '1rem', flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: '1.3rem' }}>WhatsApp</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <SoundToggle />
           <WaModeToggle
             mode={mode}
             onChange={(m) => {
@@ -126,7 +129,7 @@ function Inbox() {
             <input className="input" placeholder="Buscar por nombre o número…" value={q} onChange={(e) => setQ(e.target.value)} />
             {mode === 'wazzup' && canGlobal && (
               <button className={`btn ${selected === '__wazzup__' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelected('__wazzup__')}>
-                🟩 Bandeja completa de Wazzup
+                <IconText name="inbox" size={16}>Bandeja completa de Wazzup</IconText>
               </button>
             )}
           </div>
@@ -163,7 +166,7 @@ function Inbox() {
                     </div>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <span style={{ flex: 1, fontSize: '0.78rem', color: unread ? 'var(--color-text)' : 'var(--color-text-muted)', fontWeight: unread ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {c.last_direction === 'out' ? '↪ ' : ''}
+                        {c.last_direction === 'out' ? <Icon name="reply" size={13} style={{ verticalAlign: '-2px', marginRight: 4, transform: 'scaleX(-1)' }} /> : ''}
                         {c.last_message_preview}
                       </span>
                       {unread > 0 && (
@@ -173,7 +176,7 @@ function Inbox() {
                       )}
                     </div>
                     <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                      {c.assigned_user_id ? `👤 ${userMap[c.assigned_user_id]?.name ?? ''}` : '⚠ Sin asignar'}
+                      {c.assigned_user_id ? <IconText name="user" size={12} gap={4}>{userMap[c.assigned_user_id]?.name ?? ''}</IconText> : <IconText name="triangle-alert" size={12} gap={4}>Sin asignar</IconText>}
                       {channels.length > 1 && chName(c.channel_id) ? ` · ${chName(c.channel_id)}` : ''}
                     </div>
                   </button>
@@ -194,7 +197,7 @@ function Inbox() {
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.7rem 1rem', borderBottom: '1px solid var(--color-border)' }}>
-                <span style={{ fontSize: '1.4rem' }}>🟢</span>
+                <StatusDot color="#25D366" size={12} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{conv ? conv.lead_name || conv.contact_name || formatChat(conv.chat_id) : ''}</strong>
                   {conv && (
