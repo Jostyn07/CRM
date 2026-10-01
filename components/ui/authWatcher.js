@@ -10,7 +10,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 
-const PUBLIC_PATHS = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/registro'];
+const PUBLIC_PATHS = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/auth/sso', '/registro'];
 
 export default function AuthWatcher() {
   const router = useRouter();

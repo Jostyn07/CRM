@@ -50,6 +50,7 @@ const SETTINGS_LINKS = [
   { href: '/settings/automatizaciones', label: 'Automatizaciones', show: (s) => s.can('automations.manage') },
   { href: '/settings/ia', label: 'Inteligencia artificial', show: (s) => s.can('ai.manage') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
+  { href: '/settings/sso', label: 'Inicio de sesión externo', show: (s) => s.can('sso.manage', 'organization') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
   { href: '/settings', label: 'Mi cuenta', show: () => true },
 ];
@@ -64,7 +65,7 @@ function LogoImage({ src, alt, fallbackText }) {
   return <img key={list[i]} src={list[i]} alt={alt} onError={() => setI((n) => n + 1)} />;
 }
 
-const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/registro'];
+const HIDDEN_ON = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/auth/sso', '/registro'];
 
 // Abre/cierra el menú en móvil (lo usa la barra superior)
 export function toggleSidebar(open) {

@@ -23,6 +23,7 @@ export const SETTINGS_TABS = [
   { href: '/settings/automatizaciones', label: 'Automatizaciones', show: (s) => s.can('automations.manage') },
   { href: '/settings/ia', label: 'Inteligencia artificial', show: (s) => s.can('ai.manage') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
+  { href: '/settings/sso', label: 'Inicio de sesión externo', show: (s) => s.can('sso.manage', 'organization') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
   { href: '/settings', label: 'Mi cuenta', show: () => true },
 ];

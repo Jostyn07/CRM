@@ -37,3 +37,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# páginas guardadas desde el navegador ("Guardar como…")
+*.descarga
+*_files/

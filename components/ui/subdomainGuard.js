@@ -28,7 +28,7 @@ export default function SubdomainGuard() {
 
   useEffect(() => {
     if (!ROOT_DOMAIN || loading || isPlatformOwner || !organization?.slug) return;
-    if (pathname === '/login' || pathname === '/') return;
+    if (pathname === '/login' || pathname === '/' || pathname === '/auth/sso') return;
     if (window.location.hostname.endsWith('.vercel.app') || window.location.hostname === 'localhost') return;
 
     if (getCurrentSubdomain() !== organization.slug) {
