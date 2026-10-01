@@ -16,7 +16,7 @@ function chatError(error) {
 }
 
 export const MSG_COLS =
-  'id, conversation_id, sender_id, kind, body, attachment_path, attachment_name, attachment_mime, attachment_size, duration_ms, reply_to_id, created_at, edited_at, forwarded';
+  'id, conversation_id, sender_id, kind, body, attachment_path, attachment_name, attachment_mime, attachment_size, duration_ms, reply_to_id, created_at, edited_at';
 
 export async function openDirect(userId) {
   const { data, error } = await supabase.rpc('chat_open_direct', { p_user: userId });
@@ -347,29 +347,4 @@ export function diaSeparador(iso) {
   ayer.setDate(hoy.getDate() - 1);
   if (d.toDateString() === ayer.toDateString()) return 'Ayer';
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
-}
-
-// ---------------------------------------------------------------
-// Reenviar un mensaje a otro chat (o a una persona: abre el chat 1 a 1)
-// El archivo se copia a la carpeta del chat de destino.
-// ---------------------------------------------------------------
-export async function forwardMessage(m, { conversationId, userId }, orgId) {
-  if (!m || m.kind === 'system' || m.kind === 'sticker') throw new Error('Este mensaje no se puede reenviar.');
-  const conv = conversationId || (await openDirect(userId));
-  let path = null;
-  if (m.attachment_path) {
-    path = `${orgId}/${conv}/${crypto.randomUUID()}-${safeName(m.attachment_name || m.attachment_path.split('/').pop())}`;
-    const { error } = await supabase.storage.from(BUCKET).copy(m.attachment_path, path);
-    if (error) throw new Error(`No se pudo copiar el archivo: ${error.message}`);
-  }
-  return sendMessage(conv, {
-    kind: m.kind,
-    body: m.body ?? null,
-    attachment_path: path,
-    attachment_name: m.attachment_name ?? null,
-    attachment_mime: m.attachment_mime ?? null,
-    attachment_size: m.attachment_size ?? null,
-    duration_ms: m.duration_ms ?? null,
-    forwarded_from: m.id,
-  });
 }

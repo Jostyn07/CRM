@@ -14,15 +14,17 @@ import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
 import { getAvatarColors, getInitials } from '../../components/leads/avatarColor';
 import Modal from '../../components/ui/modal';
+import Icon, { IconText } from '../../components/ui/icon';
 import MessageBubble from '../../components/chat/messageBubble';
 import Composer from '../../components/chat/composer';
 import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupDialogs';
+import ForwardDialog from '../../components/chat/forwardDialog';
 import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
-  listConversations, listStickers, markRead, openDirect, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  listConversations, listStickers, markRead, openDirect, openNotes, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 
-function Avatar({ name, size = 34, group }) {
+function Avatar({ name, size = 34, group, icon }) {
   const c = getAvatarColors(name);
   return (
     <div
@@ -30,8 +32,8 @@ function Avatar({ name, size = 34, group }) {
         width: size,
         height: size,
         borderRadius: '50%',
-        background: group ? 'var(--color-active-bg)' : c.bg,
-        color: group ? 'var(--color-primary)' : c.color,
+        background: group || icon ? 'var(--color-active-bg)' : c.bg,
+        color: group || icon ? 'var(--color-primary)' : c.color,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -40,7 +42,7 @@ function Avatar({ name, size = 34, group }) {
         flexShrink: 0,
       }}
     >
-      {group ? '👥' : getInitials(name)}
+      {icon ? <Icon name={icon} size={Math.round(size * 0.5)} /> : group ? <Icon name="users" size={Math.round(size * 0.5)} /> : getInitials(name)}
     </div>
   );
 }
@@ -70,6 +72,7 @@ export default function ComunicacionApp() {
   const [groupInfo, setGroupInfo] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [toast, setToast] = useState(null);
+  const [forwardMsg, setForwardMsg] = useState(null);
   const [savedStickers, setSavedStickers] = useState(() => new Set());
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
   const [, setTick] = useState(0);
@@ -87,6 +90,15 @@ export default function ComunicacionApp() {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Usuarios creados antes de las Notas: se crean la primera vez
+  useEffect(() => {
+    if (conversations && !conversations.some((c) => c.kind === 'notes')) {
+      openNotes()
+        .then(() => loadConversations())
+        .catch(() => {});
+    }
+  }, [conversations, loadConversations]);
 
   // Stickers que ya tengo guardados (para marcar "Guardado")
   const loadSaved = useCallback(() => {
@@ -346,7 +358,7 @@ export default function ComunicacionApp() {
       await saveAsSticker(orgId, me, m.attachment_path);
       setSavedStickers((prev) => new Set(prev).add(m.attachment_path));
       loadSaved();
-      setToast('Guardado en tus stickers ⭐');
+      setToast('Guardado en tus stickers');
       setTimeout(() => setToast(null), 2500);
     } catch (e) {
       setError(e.message);
@@ -367,9 +379,12 @@ export default function ComunicacionApp() {
 
   const conv = conversations?.find((c) => c.conversation_id === selectedId);
   const isGroup = conv?.kind === 'group';
+  const isNotes = conv?.kind === 'notes';
   const otherId = conv?.other_user_id ?? (conv ? null : pendingOther);
-  const title = isGroup ? conv.title : userMap[otherId]?.name ?? (otherId ? 'Usuario' : '');
-  const nameOf = (c) => (c.kind === 'group' ? c.title : userMap[c.other_user_id]?.name ?? 'Usuario');
+  const title = isNotes ? 'Notas' : isGroup ? conv.title : userMap[otherId]?.name ?? (otherId ? 'Usuario' : '');
+  const nameOf = (c) => (c.kind === 'notes' ? 'Notas' : c.kind === 'group' ? c.title : userMap[c.other_user_id]?.name ?? 'Usuario');
+  // Ícono: Notas, grupo General, grupo de sucursal
+  const iconOf = (c) => (c?.kind === 'notes' ? 'notebook-pen' : c?.system_key === 'org' ? 'building-2' : c?.system_key ? 'map-pin' : null);
 
   const q = search.trim().toLowerCase();
   const results = useMemo(
@@ -390,11 +405,11 @@ export default function ComunicacionApp() {
         <div style={{ display: 'flex', gap: 8 }}>
           {notifPerm === 'default' && (
             <button className="btn btn-secondary" onClick={enableNotifications}>
-              🔔 Activar avisos
+              <IconText name="bell" size={16}>Activar avisos</IconText>
             </button>
           )}
           <button className="btn btn-primary" onClick={() => setNewGroup(true)}>
-            👥 Nuevo grupo
+            <IconText name="users" size={16}>Nuevo grupo</IconText>
           </button>
         </div>
       </div>
@@ -452,7 +467,7 @@ export default function ComunicacionApp() {
                       cursor: 'pointer',
                     }}
                   >
-                    <Avatar name={name} group={c.kind === 'group'} />
+                    <Avatar name={name} group={c.kind === 'group'} icon={iconOf(c)} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                         <span style={{ fontWeight: unread ? 700 : 500, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
@@ -470,8 +485,12 @@ export default function ComunicacionApp() {
                             textOverflow: 'ellipsis',
                           }}
                         >
-                          {who}
-                          {c.last_message_preview}
+                          {c.kind === 'notes' && !c.last_message_preview ? 'Solo tú puedes ver tus notas' : (
+                            <>
+                              {c.kind === 'notes' ? '' : who}
+                              {c.last_message_preview}
+                            </>
+                          )}
                         </span>
                         {unread > 0 && (
                           <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--color-primary)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -496,10 +515,19 @@ export default function ComunicacionApp() {
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.7rem 1rem', borderBottom: '1px solid var(--color-border)' }}>
-                {title && <Avatar name={title} size={32} group={isGroup} />}
+                {title && <Avatar name={title} size={32} group={isGroup} icon={iconOf(conv)} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong style={{ fontSize: '0.95rem' }}>{title}</strong>
-                  {isGroup && <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>{conv.member_count} miembros</div>}
+                  {isGroup && (
+                    <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                      {conv.member_count} miembros{conv.system_key ? ' · grupo automático' : ''}
+                    </div>
+                  )}
+                  {isNotes && (
+                    <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Icon name="lock" size={12} /> Privado: solo tú puedes ver tus notas
+                    </div>
+                  )}
                 </div>
                 {isGroup && (
                   <button className="btn btn-secondary" onClick={() => setGroupInfo(true)}>
@@ -548,6 +576,7 @@ export default function ComunicacionApp() {
                         onCancelEdit={() => setEditId(null)}
                         onSaveEdit={handleEdit}
                         onSaveSticker={handleSaveSticker}
+                        onForward={setForwardMsg}
                         stickerSaved={savedStickers.has(m.attachment_path)}
                         isGroup={isGroup}
                         readInfo={
@@ -611,6 +640,22 @@ export default function ComunicacionApp() {
           setSelectedId(null);
           setMessages([]);
           window.__chatOpenConversation = null;
+          loadConversations();
+        }}
+      />
+      <ForwardDialog
+        message={forwardMsg}
+        onClose={() => setForwardMsg(null)}
+        conversations={conversations}
+        users={users}
+        userMap={userMap}
+        me={me}
+        orgId={orgId}
+        onDone={(n) => {
+          trackEvent('chat.forward', { entityType: 'chat_messages', entityId: forwardMsg?.id, metadata: { targets: n } });
+          setForwardMsg(null);
+          setToast(n > 1 ? `Reenviado a ${n} chats` : 'Reenviado');
+          setTimeout(() => setToast(null), 2500);
           loadConversations();
         }}
       />

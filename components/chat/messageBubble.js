@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { EDIT_MINUTES, canEditMessage, fileSize, hora, previewOf, useSignedUrl } from '../../lib/chat/api';
 import { QUICK_REACTIONS, renderFormatted } from '../../lib/chat/format';
 import EmojiPicker from './emojiPicker';
+import Icon, { IconText } from '../ui/icon';
 
 function Attachment({ m, mine, onOpenImage }) {
   const url = useSignedUrl(m.attachment_path);
@@ -55,7 +56,7 @@ function Attachment({ m, mine, onOpenImage }) {
         minWidth: 200,
       }}
     >
-      <span style={{ fontSize: '1.6rem' }}>📄</span>
+      <Icon name="file-text" size={26} style={{ flexShrink: 0 }} />
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'block', fontWeight: 600, fontSize: '0.84rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>
           {m.attachment_name || 'Documento'}
@@ -81,6 +82,7 @@ export default function MessageBubble({
   onSaveEdit,
   onCancelEdit,
   onSaveSticker,
+  onForward,
   stickerSaved,
   isGroup,
   readInfo,
@@ -144,6 +146,12 @@ export default function MessageBubble({
           position: 'relative',
         }}
       >
+        {m.forwarded && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.72rem', fontStyle: 'italic', opacity: 0.8, marginBottom: 4 }}>
+            <Icon name="forward" size={12} />
+            Reenviado
+          </div>
+        )}
         {replyTo && (
           <button
             type="button"
@@ -282,14 +290,19 @@ export default function MessageBubble({
               </button>
             ))}
             <button type="button" title="Más reacciones" onClick={() => setPicker((v) => !v)} style={actionBtn}>
-              ☺︎
+              <Icon name="smile" size={16} />
             </button>
             <button type="button" title="Responder" onClick={() => onReply?.(m)} style={actionBtn}>
-              ↩
+              <Icon name="reply" size={16} />
             </button>
+            {onForward && m.kind !== 'system' && m.kind !== 'sticker' && (
+              <button type="button" title="Reenviar" onClick={() => onForward(m)} style={actionBtn}>
+                <Icon name="forward" size={16} />
+              </button>
+            )}
             {canEditMessage(m, me) && (
               <button type="button" title={`Editar (hasta ${EDIT_MINUTES} min)`} onClick={() => onStartEdit?.(m)} style={actionBtn}>
-                ✎
+                <Icon name="pencil" size={15} />
               </button>
             )}
             {(m.kind === 'image' || (m.kind === 'sticker' && !stickerSaved)) && (
@@ -299,7 +312,7 @@ export default function MessageBubble({
                 onClick={() => onSaveSticker?.(m)}
                 style={{ ...actionBtn, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 3 }}
               >
-                ⭐ <span>Guardar sticker</span>
+                <Icon name="star" size={14} /> <span>Guardar sticker</span>
               </button>
             )}
             {picker && (
@@ -378,7 +391,7 @@ function ReadTicks({ info, userMap, isGroup, sticker }) {
           opacity: all ? 1 : 0.85,
         }}
       >
-        {all ? '✓✓' : '✓'}
+        <Icon name={all ? 'check-check' : 'check'} size={14} />
       </button>
       {open && (
         <span
@@ -404,7 +417,7 @@ function ReadTicks({ info, userMap, isGroup, sticker }) {
           <strong style={{ display: 'block', marginBottom: 4 }}>Info del mensaje</strong>
           {seen.length > 0 && (
             <>
-              <span style={{ display: 'block', color: '#0ea5e9', fontWeight: 600, marginTop: 4 }}>✓✓ Visto por</span>
+              <span style={{ display: 'block', color: '#0ea5e9', fontWeight: 600, marginTop: 4 }}><IconText name="check-check" size={14} gap={4}>Visto por</IconText></span>
               {seen
                 .sort((a, b) => new Date(readBy.get(a)) - new Date(readBy.get(b)))
                 .map((u) => (
@@ -417,7 +430,7 @@ function ReadTicks({ info, userMap, isGroup, sticker }) {
           )}
           {pending.length > 0 && (
             <>
-              <span style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 6 }}>✓ Aún no lo ha visto</span>
+              <span style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: 6 }}><IconText name="check" size={14} gap={4}>Aún no lo ha visto</IconText></span>
               {pending.map((u) => (
                 <span key={u} style={{ display: 'block', padding: '2px 0' }}>
                   {userMap[u]?.name ?? 'Usuario'}

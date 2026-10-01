@@ -1524,3 +1524,16 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 @media (max-width: 900px) {
   .sb:not(.open)::before, .sb:not(.open)::after { display: none; }
 }
+
+/* Reenviar mensajes */
+.fwd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.45rem 0.5rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.fwd-row:hover { background: var(--color-active-bg); }
+.fwd-row input { width: 17px; height: 17px; accent-color: var(--color-primary); }
+.fwd-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); padding: 8px 6px 4px; }
