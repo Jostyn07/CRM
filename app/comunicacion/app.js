@@ -177,7 +177,7 @@ export default function ComunicacionApp() {
         const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
         const msgs = await getMessages(id, { after: clearedAt || undefined });
         setMessages(msgs);
-        setHasMore(msgs.length === 50);
+        setHasMore(msgs.hasMore);
         loadReactions(msgs.map((m) => m.id));
         loadReads(msgs);
         loadMembers(id);
@@ -290,16 +290,31 @@ export default function ComunicacionApp() {
     }
   }
 
+  const loadingOlder = useRef(false);
+  const listRef = useRef(null);
   async function loadOlder() {
-    if (!messages.length) return;
+    if (!messages.length || loadingOlder.current) return;
+    loadingOlder.current = true;
     stickToBottom.current = false;
-    const clearedAt = convsRef.current.find((x) => x.conversation_id === selectedId)?.cleared_at;
-    const older = await getMessages(selectedId, { before: messages[0].created_at, after: clearedAt || undefined });
-    setHasMore(older.length === 50);
-    setMessages((prev) => [...older, ...prev]);
-    loadReactions(older.map((m) => m.id));
-    loadReads(older);
-    ensureRefs(older);
+    const el = listRef.current;
+    const prevHeight = el ? el.scrollHeight : 0;
+    try {
+      const clearedAt = convsRef.current.find((x) => x.conversation_id === selectedId)?.cleared_at;
+      const older = await getMessages(selectedId, { before: messages[0].created_at, after: clearedAt || undefined });
+      setHasMore(older.hasMore);
+      setMessages((prev) => [...older.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
+      loadReactions(older.map((m) => m.id));
+      loadReads(older);
+      ensureRefs(older);
+      // Mantiene la vista en el mismo mensaje (no salta)
+      requestAnimationFrame(() => {
+        if (el) el.scrollTop += el.scrollHeight - prevHeight;
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      loadingOlder.current = false;
+    }
   }
 
   const addLocal = (m) => {
@@ -614,9 +629,12 @@ export default function ComunicacionApp() {
 
               <div
                 style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.8rem 1.4rem', display: 'flex', flexDirection: 'column', gap: 6 }}
+                ref={listRef}
                 onScroll={(e) => {
                   const el = e.currentTarget;
                   stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                  // Al llegar arriba se cargan solos los mensajes anteriores
+                  if (el.scrollTop < 60 && hasMore) loadOlder();
                 }}
               >
                 {hasMore && (
