@@ -4,7 +4,8 @@
 // leads por día, conversión por etapa, tareas de hoy, leads recientes, top
 // del equipo, actividad reciente, metas del mes y acceso a reportes.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabase/client';
 import Icon from '../ui/icon';
 import Avatar from '../ui/avatar';
 import { num, shortDate } from '../../lib/reports/api';
@@ -21,10 +22,44 @@ const QUOTES = [
   'Pequeños avances diarios, grandes resultados.',
 ];
 
+// Frase del día escrita por la IA (una por día, hora de Bogotá). Mientras
+// carga, o si la IA no responde, se usa una frase fija.
+function useFraseDelDia() {
+  const fija = QUOTES[new Date().getDate() % QUOTES.length];
+  const [frase, setFrase] = useState({ message: fija, topic: null });
+  useEffect(() => {
+    let vivo = true;
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+    const KEY = `xiris.frase.${day}`;
+    try {
+      const guardada = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+      if (guardada?.message) return setFrase(guardada);
+    } catch {}
+    (async () => {
+      let { data } = await supabase.from('daily_messages').select('message, topic').eq('day', day).maybeSingle();
+      if (!data) {
+        const r = await supabase.functions.invoke('frase-del-dia', { body: {} });
+        if (!r.error && r.data?.message) data = r.data;
+      }
+      if (vivo && data?.message) {
+        setFrase({ message: data.message, topic: data.topic ?? null });
+        try {
+          sessionStorage.setItem(KEY, JSON.stringify({ message: data.message, topic: data.topic ?? null }));
+        } catch {}
+      }
+    })().catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
+  return frase;
+}
+
 export function Hero({ name, right }) {
   const hour = new Date().getHours();
   const hello = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-  const quote = QUOTES[new Date().getDate() % QUOTES.length];
+  const frase = useFraseDelDia();
+  const quote = frase.message;
   return (
     <section className="dash-hero">
       <div style={{ position: 'relative', zIndex: 1, minWidth: 0 }}>
@@ -36,7 +71,7 @@ export function Hero({ name, right }) {
       </div>
       <blockquote className="dash-quote">
         <Icon name="sparkles" size={16} style={{ color: 'var(--color-primary)', marginBottom: 6 }} />
-        <span>“{quote}”</span>
+        <span title={frase.topic ? `Inspirada en: ${frase.topic}` : undefined}>“{quote}”</span>
       </blockquote>
     </section>
   );
