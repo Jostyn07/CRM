@@ -59,6 +59,10 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
         setError(`"${file.name}" supera el límite de 50 MB.`);
         continue;
       }
+      if (!file.size) {
+        setError(`"${file.name}" está vacío o no se pudo leer. Si está en OneDrive o Google Drive, descárgalo primero al computador.`);
+        continue;
+      }
       ok.push({ file, url: file.type.startsWith('image/') || file.type.startsWith('video/') ? URL.createObjectURL(file) : null });
     }
     if (ok.length) setFiles((prev) => [...prev, ...ok].slice(0, 10));

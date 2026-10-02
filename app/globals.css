@@ -1564,3 +1564,43 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 .file-drop-box strong { font-size: 1.05rem; color: var(--color-text); }
 .file-drop-box span { font-size: 0.8rem; color: var(--color-text-muted); }
 @keyframes file-drop-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+
+/* Visor de imágenes del chat */
+.img-viewer {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(8, 7, 6, 0.92);
+  display: flex; align-items: center; justify-content: center;
+  animation: file-drop-in .15s ease-out;
+}
+.img-viewer-top {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; color: #f5f1e8;
+  background: linear-gradient(rgba(0,0,0,.55), transparent);
+}
+.img-viewer-top strong { display: block; font-size: .95rem; }
+.img-viewer-top span { font-size: .78rem; opacity: .75; }
+.img-viewer-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); color: #fff;
+}
+.img-viewer-btn:hover { background: rgba(255,255,255,.2); }
+.img-viewer-stage { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: calc(100vw - 160px); }
+.img-viewer-stage img { max-width: 100%; max-height: calc(100vh - 150px); border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.5); object-fit: contain; }
+.img-viewer-stage p { margin: 0; color: #f5f1e8; font-size: .9rem; max-width: 640px; text-align: center; }
+.img-viewer-loading { width: 320px; height: 220px; border-radius: 8px; background: rgba(255,255,255,.08); }
+.img-viewer-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 52px; height: 52px; border-radius: 999px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); color: #fff;
+}
+.img-viewer-nav:hover { background: var(--color-primary); border-color: var(--color-primary); }
+.img-viewer-nav.left { left: 18px; }
+.img-viewer-nav.right { right: 18px; }
+@media (max-width: 640px) {
+  .img-viewer-stage { max-width: 100vw; padding: 0 8px; }
+  .img-viewer-nav { width: 42px; height: 42px; }
+  .img-viewer-nav.left { left: 6px; } .img-viewer-nav.right { right: 6px; }
+}

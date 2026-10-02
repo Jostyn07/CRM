@@ -13,7 +13,6 @@ import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
 import { getAvatarColors, getInitials } from '../../components/leads/avatarColor';
-import Modal from '../../components/ui/modal';
 import Icon, { IconText } from '../../components/ui/icon';
 import MessageBubble from '../../components/chat/messageBubble';
 import Composer from '../../components/chat/composer';
@@ -27,6 +26,7 @@ import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
 import CardMenu from '../../components/ui/cardMenu';
 import FileDropZone from '../../components/ui/fileDropZone';
+import ImageViewer from '../../components/chat/imageViewer';
 
 function Avatar({ name, size = 34, group, icon }) {
   const c = getAvatarColors(name);
@@ -692,7 +692,7 @@ export default function ComunicacionApp() {
                             : null
                         }
                         onJumpTo={jumpTo}
-                        onOpenImage={setLightbox}
+                        onOpenImage={(m) => setLightbox(m.id)}
                       />
                     </div>
                   );
@@ -762,18 +762,15 @@ export default function ComunicacionApp() {
           loadConversations();
         }}
       />
-      <Modal open={!!lightbox} onClose={() => setLightbox(null)} title="Imagen" width={900}>
-        {lightbox && (
-          <div style={{ textAlign: 'center' }}>
-            <img src={lightbox} alt="" style={{ maxWidth: '100%', maxHeight: '75vh', borderRadius: 8 }} />
-            <div style={{ marginTop: 8 }}>
-              <a className="btn btn-secondary" href={lightbox} target="_blank" rel="noopener noreferrer">
-                Abrir en otra pestaña
-              </a>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {lightbox && (
+        <ImageViewer
+          images={messages.filter((x) => x.kind === 'image' && x.attachment_path && !x.deleted_at)}
+          startId={lightbox}
+          userMap={userMap}
+          me={me}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </main>
   );
 }

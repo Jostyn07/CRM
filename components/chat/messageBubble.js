@@ -20,7 +20,7 @@ function Attachment({ m, mine, onOpenImage }) {
       <img
         src={url}
         alt={m.attachment_name || (sticker ? 'sticker' : 'imagen')}
-        onClick={() => !sticker && onOpenImage?.(url)}
+        onClick={() => !sticker && onOpenImage?.(m)}
         style={{
           display: 'block',
           maxWidth: sticker ? 160 : 280,

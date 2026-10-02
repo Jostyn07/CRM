@@ -142,6 +142,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
     const ok = [];
     for (const f of list) {
       if (f.size > WA_MAX_BYTES) setError(`"${f.name}" supera el límite de 10 MB de WhatsApp.`);
+      else if (!f.size) setError(`"${f.name}" está vacío o no se pudo leer. Si está en OneDrive o Google Drive, descárgalo primero.`);
       else ok.push(f);
     }
     if (ok.length) setFiles((p) => [...p, ...ok].slice(0, 5));
