@@ -77,7 +77,7 @@ export default function SsoPage() {
     fuera.current = true;
     log('5. entrando a', destino);
     window.dispatchEvent(new Event('conexion:entrar'));
-    router.replace(destino);
+    window.location.replace(destino);
   }, [destino, router]);
 
   useEffect(() => {
