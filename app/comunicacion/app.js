@@ -3,7 +3,7 @@
 // Chat interno (Fase 4): conversaciones 1 a 1 y grupos de la
 // organización, en tiempo real. Texto con formato, emojis, stickers,
 // imágenes, videos, audios/notas de voz, documentos, respuestas a
-// mensajes y reacciones. Los mensajes no se borran; el texto se edita
+// mensajes y reacciones. El autor puede borrar sus mensajes; el texto se edita
 // durante 15 minutos. Separado de la comunicación con clientes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,10 +21,11 @@ import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupD
 import ForwardDialog from '../../components/chat/forwardDialog';
 import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
-  listConversations, listStickers, markRead, openDirect, openNotes, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
+import CardMenu from '../../components/ui/cardMenu';
 
 function Avatar({ name, size = 34, group, icon }) {
   const c = getAvatarColors(name);
@@ -59,6 +60,8 @@ export default function ComunicacionApp() {
 
   const [conversations, setConversations] = useState(null);
   const [selectedId, setSelectedId] = useState(searchParams.get('c'));
+  const convsRef = useRef([]);
+  convsRef.current = conversations || [];
   const [messages, setMessages] = useState([]);
   const [extraRefs, setExtraRefs] = useState({}); // mensajes citados que no están cargados
   const [reactions, setReactions] = useState({}); // id → [{user_id, emoji}]
@@ -171,7 +174,8 @@ export default function ComunicacionApp() {
       url.searchParams.set('c', id);
       router.replace(url.pathname + url.search, { scroll: false });
       try {
-        const msgs = await getMessages(id);
+        const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
+        const msgs = await getMessages(id, { after: clearedAt || undefined });
         setMessages(msgs);
         setHasMore(msgs.length === 50);
         loadReactions(msgs.map((m) => m.id));
@@ -204,7 +208,8 @@ export default function ComunicacionApp() {
       .channel(`chat-page-${me}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, async (payload) => {
         const m = payload.new;
-        if (m?.conversation_id && m.conversation_id === window.__chatOpenConversation) {
+        const cleared = convsRef.current.find((x) => x.conversation_id === m?.conversation_id)?.cleared_at;
+        if (m?.conversation_id && m.conversation_id === window.__chatOpenConversation && !(cleared && m.created_at <= cleared)) {
           setMessages((prev) => {
             const i = prev.findIndex((x) => x.id === m.id);
             if (i === -1) return [...prev, m];
@@ -288,7 +293,8 @@ export default function ComunicacionApp() {
   async function loadOlder() {
     if (!messages.length) return;
     stickToBottom.current = false;
-    const older = await getMessages(selectedId, { before: messages[0].created_at });
+    const clearedAt = convsRef.current.find((x) => x.conversation_id === selectedId)?.cleared_at;
+    const older = await getMessages(selectedId, { before: messages[0].created_at, after: clearedAt || undefined });
     setHasMore(older.length === 50);
     setMessages((prev) => [...older, ...prev]);
     loadReactions(older.map((m) => m.id));
@@ -345,6 +351,57 @@ export default function ComunicacionApp() {
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  async function handleDelete(m) {
+    if (!window.confirm('¿Eliminar este mensaje? Los demás verán "Mensaje eliminado".')) return;
+    try {
+      await deleteMessage(m.id);
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, deleted_at: new Date().toISOString(), body: null, attachment_path: null } : x)));
+      loadConversations();
+      trackEvent('chat.message_deleted', { entityType: 'chat_messages', entityId: m.id });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // Leer más tarde: se cierra el chat para que la marca no se quite al leer
+  async function handleReadLater(c, on) {
+    try {
+      await setReadLater(c.conversation_id, on);
+      if (on && c.conversation_id === selectedId) closeConversation();
+      setToast(on ? 'Marcado para leer más tarde' : 'Quitado de leer más tarde');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handleClearChat(c) {
+    if (!window.confirm('¿Borrar este chat? Se borra solo para ti; los demás lo seguirán viendo.')) return;
+    try {
+      await clearChat(c.conversation_id);
+      if (c.conversation_id === selectedId) {
+        if (c.kind === 'direct') closeConversation();
+        else setMessages([]);
+      }
+      setToast('Chat borrado');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+      trackEvent('chat.cleared', { entityType: 'chat_conversations', entityId: c.conversation_id });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function closeConversation() {
+    setSelectedId(null);
+    setMessages([]);
+    window.__chatOpenConversation = null;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('c');
+    router.replace(url.pathname + url.search, { scroll: false });
   }
 
   async function handleReact(m, emoji, has) {
@@ -496,6 +553,11 @@ export default function ComunicacionApp() {
                             </>
                           )}
                         </span>
+                        {c.read_later && (
+                          <span title="Leer más tarde" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>
+                            <Icon name="bookmark" size={12} /> Más tarde
+                          </span>
+                        )}
                         {unread > 0 && (
                           <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--color-primary)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                             {unread}
@@ -538,6 +600,16 @@ export default function ComunicacionApp() {
                     Info del grupo
                   </button>
                 )}
+                {conv && (
+                  <CardMenu
+                    items={[
+                      conv.read_later
+                        ? { label: 'Quitar de leer más tarde', onClick: () => handleReadLater(conv, false) }
+                        : { label: 'Marcar para leer más tarde', onClick: () => handleReadLater(conv, true) },
+                      { label: 'Borrar chat', danger: true, onClick: () => handleClearChat(conv) },
+                    ]}
+                  />
+                )}
               </div>
 
               <div
@@ -579,6 +651,7 @@ export default function ComunicacionApp() {
                         onStartEdit={(msg) => setEditId(msg.id)}
                         onCancelEdit={() => setEditId(null)}
                         onSaveEdit={handleEdit}
+                        onDelete={handleDelete}
                         onSaveSticker={handleSaveSticker}
                         onForward={setForwardMsg}
                         stickerSaved={savedStickers.has(m.attachment_path)}
@@ -609,8 +682,8 @@ export default function ComunicacionApp() {
         </div>
       </div>
       <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 8 }}>
-        Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Los mensajes no se borran y solo puedes editar
-        los tuyos durante {EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.
+        Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos
+        durante {EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.
       </p>
 
       {toast && (

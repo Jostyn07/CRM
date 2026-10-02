@@ -14,7 +14,7 @@ import EmojiPicker from '../chat/emojiPicker';
 import Icon, { IconText, StatusDot } from '../ui/icon';
 import WaClientBar from '../clients/waClientBar';
 import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
-import { WA_MAX_BYTES, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
+import { WA_EDIT_MINUTES, WA_MAX_BYTES, canEditWa, editMessage, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
 import { playSent } from '../../lib/sounds';
 
 function Media({ m }) {
@@ -48,6 +48,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]);
   const [replyTo, setReplyTo] = useState(null);
+  const [editing, setEditing] = useState(null); // { id, text, saving, error }
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [emoji, setEmoji] = useState(false);
@@ -145,6 +146,20 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
     if (ok.length) setFiles((p) => [...p, ...ok].slice(0, 5));
   }
 
+  async function saveEdit() {
+    const body = editing?.text?.trim();
+    if (!body || editing.saving) return;
+    setEditing((e) => ({ ...e, saving: true, error: null }));
+    try {
+      await editMessage(editing.id, body);
+      setMessages((prev) => (prev ?? []).map((x) => (x.id === editing.id ? { ...x, body, is_edited: true } : x)));
+      trackEvent('whatsapp.edited', { entityType: 'wa_messages', entityId: editing.id });
+      setEditing(null);
+    } catch (e) {
+      setEditing((x) => ({ ...x, saving: false, error: e.message }));
+    }
+  }
+
   const byProvider = Object.fromEntries((messages ?? []).filter((m) => m.provider_message_id).map((m) => [m.provider_message_id, m]));
   let lastDay = null;
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem', padding: '4px 6px', color: 'var(--color-text)' };
@@ -207,10 +222,37 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                   )}
                   {(m.media_path || m.media_url) && <Media m={m} />}
                   {m.kind === 'missing_call' && <div><IconText name="phone-missed" size={16}>Llamada perdida de WhatsApp</IconText></div>}
-                  {m.body && (
-                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', padding: m.kind === 'text' ? 0 : '4px 6px 0' }}>
-                      {m.is_deleted ? <em>Mensaje eliminado</em> : renderFormatted(m.body)}
+                  {editing?.id === m.id ? (
+                    <div style={{ display: 'grid', gap: 6, minWidth: 240 }}>
+                      <textarea
+                        className="input"
+                        rows={2}
+                        autoFocus
+                        value={editing.text}
+                        onChange={(e) => setEditing((x) => ({ ...x, text: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            saveEdit();
+                          }
+                          if (e.key === 'Escape') setEditing(null);
+                        }}
+                        style={{ color: 'var(--color-text)' }}
+                      />
+                      {editing.error && <div style={{ fontSize: '0.72rem' }}><IconText name="triangle-alert" size={12} gap={4}>{editing.error}</IconText></div>}
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn btn-secondary" onClick={() => setEditing(null)}>Cancelar</button>
+                        <button type="button" className="btn btn-secondary" disabled={editing.saving} onClick={saveEdit}>
+                          {editing.saving ? 'Guardando…' : 'Guardar'}
+                        </button>
+                      </div>
                     </div>
+                  ) : (
+                    m.body && (
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', padding: m.kind === 'text' ? 0 : '4px 6px 0' }}>
+                        {m.is_deleted ? <em>Mensaje eliminado</em> : renderFormatted(m.body)}
+                      </div>
+                    )
                   )}
                   {!m.body && m.kind === 'unsupported' && <em style={{ opacity: 0.8 }}>Tipo de mensaje no compatible</em>}
                   <div style={{ fontSize: '0.66rem', opacity: 0.8, textAlign: 'right', marginTop: 2, display: 'flex', gap: 6, justifyContent: 'flex-end', padding: m.kind === 'text' ? 0 : '0 6px 2px' }}>
@@ -222,6 +264,16 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                         {m.ai_urgency === 'alta' ? <StatusDot color="#ef4444" size={7} style={{ marginRight: 4 }} /> : ''}
                         {INTENTS[m.ai_intent].label}
                       </span>
+                    )}
+                    {canSend && editing?.id !== m.id && canEditWa(m, user?.id) && (
+                      <button
+                        type="button"
+                        title={`Editar (WhatsApp lo permite durante ${WA_EDIT_MINUTES} min)`}
+                        onClick={() => setEditing({ id: m.id, text: m.body ?? '' })}
+                        style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 'inherit' }}
+                      >
+                        <Icon name="pencil" size={11} /> Editar
+                      </button>
                     )}
                     {m.is_edited && <span>editado</span>}
                     <span>{hora(m.created_at)}</span>

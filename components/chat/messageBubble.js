@@ -5,7 +5,7 @@
 // acciones (responder, reaccionar, editar, guardar sticker).
 
 import { useEffect, useRef, useState } from 'react';
-import { EDIT_MINUTES, canEditMessage, fileSize, hora, previewOf, useSignedUrl } from '../../lib/chat/api';
+import { EDIT_MINUTES, canDeleteMessage, canEditMessage, fileSize, hora, previewOf, useSignedUrl } from '../../lib/chat/api';
 import { QUICK_REACTIONS, renderFormatted } from '../../lib/chat/format';
 import EmojiPicker from './emojiPicker';
 import Icon, { IconText } from '../ui/icon';
@@ -83,6 +83,7 @@ export default function MessageBubble({
   onCancelEdit,
   onSaveSticker,
   onForward,
+  onDelete,
   stickerSaved,
   isGroup,
   readInfo,
@@ -117,8 +118,9 @@ export default function MessageBubble({
     );
   }
 
-  const sticker = m.kind === 'sticker';
-  const media = ['image', 'video', 'sticker'].includes(m.kind);
+  const deleted = Boolean(m.deleted_at);
+  const sticker = m.kind === 'sticker' && !deleted;
+  const media = !deleted && ['image', 'video', 'sticker'].includes(m.kind);
 
   // Agrupa reacciones: emoji → [usuarios]
   const grouped = reactions.reduce((acc, r) => ((acc[r.emoji] ||= []).push(r.user_id), acc), {});
@@ -146,7 +148,7 @@ export default function MessageBubble({
           position: 'relative',
         }}
       >
-        {m.forwarded && (
+        {m.forwarded && !deleted && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.72rem', fontStyle: 'italic', opacity: 0.8, marginBottom: 4 }}>
             <Icon name="forward" size={12} />
             Reenviado
@@ -178,7 +180,12 @@ export default function MessageBubble({
 
         {m.attachment_path && <Attachment m={m} mine={mine} onOpenImage={onOpenImage} />}
 
-        {editing ? (
+        {deleted ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontStyle: 'italic', opacity: 0.8 }}>
+            <Icon name="ban" size={14} />
+            {mine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}
+          </div>
+        ) : editing ? (
           <div style={{ display: 'grid', gap: 6, minWidth: 240, marginTop: m.attachment_path ? 6 : 0 }}>
             <textarea
               className="input"
@@ -224,7 +231,7 @@ export default function MessageBubble({
               : { opacity: 0.75, padding: media && !m.body ? '0 4px 2px' : 0 }),
           }}
         >
-          {m.edited_at && <span>editado</span>}
+          {m.edited_at && !deleted && <span>editado</span>}
           <span>{hora(m.created_at)}</span>
           {readInfo && <ReadTicks info={readInfo} userMap={userMap} isGroup={isGroup} mine={mine} sticker={sticker} />}
         </div>
@@ -258,7 +265,7 @@ export default function MessageBubble({
       {/* Acciones al pasar el mouse. El contenedor exterior es transparente
           y queda pegado al mensaje (sin hueco), así el mouse no "se sale"
           al moverse hacia los botones. */}
-      {!readOnly && (hover || picker) && !editing && (
+      {!readOnly && !deleted && (hover || picker) && !editing && (
         <div
           onMouseEnter={show}
           onMouseLeave={() => !picker && hideSoon()}
@@ -303,6 +310,11 @@ export default function MessageBubble({
             {canEditMessage(m, me) && (
               <button type="button" title={`Editar (hasta ${EDIT_MINUTES} min)`} onClick={() => onStartEdit?.(m)} style={actionBtn}>
                 <Icon name="pencil" size={15} />
+              </button>
+            )}
+            {onDelete && canDeleteMessage(m, me) && (
+              <button type="button" title="Eliminar mensaje" onClick={() => onDelete(m)} style={actionBtn}>
+                <Icon name="trash-2" size={15} />
               </button>
             )}
             {(m.kind === 'image' || (m.kind === 'sticker' && !stickerSaved)) && (

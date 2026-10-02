@@ -15,7 +15,7 @@ import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
 import { fechaCorta } from '../../lib/chat/api';
-import { formatChat, listChannels, listConversations, useWaMode } from '../../lib/whatsapp/api';
+import { formatChat, listChannels, listConversations, setReadLater, useWaMode } from '../../lib/whatsapp/api';
 import SoundToggle from '../../components/ui/soundToggle';
 
 export default function WhatsappPage() {
@@ -80,12 +80,30 @@ function Inbox() {
 
   const list = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return (convs ?? []).filter(
-      (c) =>
-        (!onlyUnread || Number(c.unread) > 0) &&
-        (!term || `${c.lead_name ?? ''} ${c.contact_name ?? ''} ${c.chat_id}`.toLowerCase().includes(term.replace(/\D/g, '') || term))
-    );
+    return (convs ?? [])
+      .filter(
+        (c) =>
+          (!onlyUnread || Number(c.unread) > 0 || c.read_later) &&
+          (!term || `${c.lead_name ?? ''} ${c.contact_name ?? ''} ${c.chat_id}`.toLowerCase().includes(term.replace(/\D/g, '') || term))
+      )
+      .sort((a, b) => (b.read_later ? 1 : 0) - (a.read_later ? 1 : 0)); // "leer más tarde" arriba
   }, [convs, q, onlyUnread]);
+
+  // Leer más tarde: al marcarla se cierra, para que no se quite al leer
+  async function toggleReadLater(c) {
+    try {
+      await setReadLater(c.id, !c.read_later);
+      if (!c.read_later) {
+        setSelected(null);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('c');
+        router.replace(url.pathname + url.search, { scroll: false });
+      }
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   const conv = convs?.find((c) => c.id === selected);
   const chName = (id) => channels.find((c) => c.id === id)?.name;
@@ -169,6 +187,11 @@ function Inbox() {
                         {c.last_direction === 'out' ? <Icon name="reply" size={13} style={{ verticalAlign: '-2px', marginRight: 4, transform: 'scaleX(-1)' }} /> : ''}
                         {c.last_message_preview}
                       </span>
+                      {c.read_later && (
+                        <span title="Leer más tarde" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>
+                          <Icon name="bookmark" size={12} /> Más tarde
+                        </span>
+                      )}
                       {unread > 0 && (
                         <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#25D366', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                           {unread}
@@ -206,6 +229,11 @@ function Inbox() {
                     </div>
                   )}
                 </div>
+                {conv && (
+                  <button className="btn btn-secondary" onClick={() => toggleReadLater(conv)} title={conv.read_later ? 'Quitar la marca' : 'Se marca y se cierra; la verás arriba en la lista'}>
+                    <IconText name="bookmark" size={15}>{conv.read_later ? 'Quitar de más tarde' : 'Leer más tarde'}</IconText>
+                  </button>
+                )}
                 {conv?.lead_id && (
                   <a className="btn btn-secondary" href={`/leads/${conv.lead_id}`}>
                     Ver lead
