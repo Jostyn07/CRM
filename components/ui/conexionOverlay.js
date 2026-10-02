@@ -87,13 +87,23 @@ export default function ConexionOverlay() {
     };
   }, [activo]);
 
-  // Ya en el destino, con sesión cargada: dar tiempo a que el Dashboard pinte
+  // Ya en el destino: retirar la pantalla cuando el Dashboard pintó
+  // (con la sesión cargada, o a los 5 s como máximo pase lo que pase)
+  const liberar = () => {
+    if (liberado.current) return;
+    liberado.current = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => enviar({ type: 'xiris-conexion:listo' })));
+    // Si la pantalla no responde, se quita igual
+    setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'xiris-conexion:fin' }, origin: window.location.origin, source: frame.current?.contentWindow })), 2500);
+  };
+  useEffect(() => {
+    if (!activo || pathname === '/auth/sso' || liberado.current) return undefined;
+    const t = setTimeout(liberar, 5000);
+    return () => clearTimeout(t);
+  }, [activo, pathname]);
   useEffect(() => {
     if (!activo || pathname === '/auth/sso' || loading || !user || liberado.current) return undefined;
-    liberado.current = true;
-    const t = setTimeout(() => {
-      requestAnimationFrame(() => requestAnimationFrame(() => enviar({ type: 'xiris-conexion:listo' })));
-    }, 1200);
+    const t = setTimeout(liberar, 1200);
     return () => clearTimeout(t);
   }, [activo, pathname, loading, user]);
 
