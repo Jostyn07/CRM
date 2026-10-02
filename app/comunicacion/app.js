@@ -26,6 +26,7 @@ import {
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
 import CardMenu from '../../components/ui/cardMenu';
+import FileDropZone from '../../components/ui/fileDropZone';
 
 function Avatar({ name, size = 34, group, icon }) {
   const c = getAvatarColors(name);
@@ -60,6 +61,7 @@ export default function ComunicacionApp() {
 
   const [conversations, setConversations] = useState(null);
   const [selectedId, setSelectedId] = useState(searchParams.get('c'));
+  const [dropped, setDropped] = useState(null); // archivos soltados en el chat
   const convsRef = useRef([]);
   convsRef.current = conversations || [];
   const [messages, setMessages] = useState([]);
@@ -587,8 +589,13 @@ export default function ComunicacionApp() {
           </div>
         </div>
 
-        {/* Hilo */}
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+        {/* Hilo (se pueden soltar archivos en cualquier parte) */}
+        <FileDropZone
+          disabled={!selectedId}
+          hint="Máximo 50 MB por archivo"
+          onFiles={(files) => setDropped({ files, n: Date.now() })}
+          style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}
+        >
           {!selectedId ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem', padding: '1rem', textAlign: 'center' }}>
               Elige una conversación, busca a un compañero o crea un grupo.
@@ -694,10 +701,10 @@ export default function ComunicacionApp() {
               </div>
 
               {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', padding: '0 1rem' }}>{error}</p>}
-              <Composer orgId={orgId} userId={me} userMap={userMap} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={handleSend} />
+              <Composer orgId={orgId} userId={me} userMap={userMap} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={handleSend} droppedFiles={dropped} />
             </>
           )}
-        </div>
+        </FileDropZone>
       </div>
       <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 8 }}>
         Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos

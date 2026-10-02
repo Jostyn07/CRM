@@ -1550,3 +1550,17 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 .dash-quote-react button:hover { color: var(--color-primary); border-color: var(--color-primary); }
 .dash-quote-react button.on { color: var(--color-primary); border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 14%, transparent); }
 .dash-quote-react button:disabled { opacity: .6; cursor: default; }
+
+/* Zona para soltar archivos en el chat */
+.file-drop-overlay {
+  position: absolute; inset: 8px; z-index: 30; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--color-primary); border-radius: 14px;
+  background: color-mix(in srgb, var(--color-primary) 12%, color-mix(in srgb, var(--color-bg) 88%, transparent));
+  backdrop-filter: blur(2px);
+  animation: file-drop-in .12s ease-out;
+}
+.file-drop-box { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--color-primary); text-align: center; padding: 1rem; }
+.file-drop-box strong { font-size: 1.05rem; color: var(--color-text); }
+.file-drop-box span { font-size: 0.8rem; color: var(--color-text-muted); }
+@keyframes file-drop-in { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }

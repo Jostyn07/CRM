@@ -16,6 +16,7 @@ import WaClientBar from '../clients/waClientBar';
 import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
 import { WA_EDIT_MINUTES, WA_MAX_BYTES, canEditWa, editMessage, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
 import { playSent } from '../../lib/sounds';
+import FileDropZone from '../ui/fileDropZone';
 
 function Media({ m }) {
   const url = useMediaUrl(m);
@@ -165,7 +166,12 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem', padding: '4px 6px', color: 'var(--color-text)' };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height, minHeight: 0 }}>
+    <FileDropZone
+      disabled={!canSend}
+      hint="Máximo 10 MB por archivo (límite de WhatsApp)"
+      onFiles={addFiles}
+      style={{ display: 'flex', flexDirection: 'column', height, minHeight: 0 }}
+    >
       <WaClientBar conversationId={conversationId} />
       <div
         style={{ flex: 1, overflowY: 'auto', padding: '0.8rem 1.2rem', display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--color-bg, transparent)' }}
@@ -291,11 +297,6 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
       {canSend ? (
         <div
           style={{ borderTop: '1px solid var(--color-border)', padding: '0.5rem 0.8rem', position: 'relative' }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            addFiles([...(e.dataTransfer.files || [])]);
-          }}
         >
           {replyTo && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #128C7E', background: 'var(--color-active-bg)', borderRadius: 6, fontSize: '0.8rem' }}>
@@ -423,6 +424,6 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
           No tienes permiso para enviar mensajes en esta conversación.
         </p>
       )}
-    </div>
+    </FileDropZone>
   );
 }

@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import EmojiPicker from './emojiPicker';
 import StickerPicker from './stickerPicker';
 import VoiceMeter from './voiceMeter';
+import Icon from '../ui/icon';
 import { MAX_FILE_BYTES, fileSize, kindFromMime, previewOf } from '../../lib/chat/api';
 import { wrapSelection } from '../../lib/chat/format';
 
@@ -19,7 +20,7 @@ const FORMATS = [
   { label: '</>', title: 'Código (`texto`)', marker: '`', style: { fontFamily: 'monospace', fontSize: '0.75rem' } },
 ];
 
-export default function Composer({ orgId, userId, userMap, replyTo, onCancelReply, onSend, disabled }) {
+export default function Composer({ orgId, userId, userMap, replyTo, onCancelReply, onSend, disabled, droppedFiles }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]); // [{file, url}]
   const [showEmoji, setShowEmoji] = useState(false);
@@ -41,6 +42,12 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
     const t = setInterval(() => setRecSeconds(Math.floor((Date.now() - recording.start) / 1000)), 250);
     return () => clearInterval(t);
   }, [recording]);
+
+  // Archivos soltados en cualquier parte del chat ({ files, n })
+  useEffect(() => {
+    if (droppedFiles?.files?.length) addFiles(droppedFiles.files);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [droppedFiles]);
 
   // Limpia vistas previas
   useEffect(() => () => files.forEach((f) => f.url && URL.revokeObjectURL(f.url)), [files]);
@@ -120,11 +127,6 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
   return (
     <div
       style={{ borderTop: '1px solid var(--color-border)', padding: '0.5rem 0.8rem 0.7rem', position: 'relative' }}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        addFiles([...(e.dataTransfer.files || [])]);
-      }}
     >
       {replyTo && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', marginBottom: 6, borderLeft: '3px solid var(--color-primary)', background: 'var(--color-active-bg)', borderRadius: 6 }}>
@@ -150,7 +152,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
                 <video src={f.url} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8 }} />
               ) : (
                 <div style={{ width: 150, height: 72, borderRadius: 8, background: 'var(--color-active-bg)', padding: 6, fontSize: '0.72rem', overflow: 'hidden' }}>
-                  <div style={{ fontSize: '1.2rem' }}>{kindFromMime(f.file.type) === 'audio' ? '🎤' : '📄'}</div>
+                  <div><Icon name={kindFromMime(f.file.type) === 'audio' ? 'mic' : 'file-text'} size={20} /></div>
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file.name}</div>
                   <div style={{ opacity: 0.7 }}>{fileSize(f.file.size)}</div>
                 </div>
@@ -201,7 +203,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
         <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
           <div style={{ position: 'relative' }}>
             <button type="button" style={iconBtn} title="Emojis" onClick={() => setShowEmoji((v) => !v)}>
-              😊
+              <Icon name="smile" size={18} />
             </button>
             {showEmoji && (
               <EmojiPicker
@@ -221,7 +223,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
           </div>
           <div style={{ position: 'relative' }}>
             <button type="button" style={iconBtn} title="Stickers" onClick={() => setShowStickers((v) => !v)}>
-              🏷️
+              <Icon name="sticky-note" size={18} />
             </button>
             {showStickers && (
               <StickerPicker
@@ -242,7 +244,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
             )}
           </div>
           <button type="button" style={iconBtn} title="Adjuntar imagen, video, audio o documento" onClick={() => fileRef.current?.click()}>
-            📎
+            <Icon name="paperclip" size={18} />
           </button>
           <input
             ref={fileRef}
@@ -283,7 +285,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
             </button>
           ) : (
             <button type="button" style={{ ...iconBtn, fontSize: '1.3rem' }} title="Grabar nota de voz" disabled={sending || disabled} onClick={startRecording}>
-              🎙️
+              <Icon name="mic" size={20} />
             </button>
           )}
         </div>
