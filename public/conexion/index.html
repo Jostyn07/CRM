@@ -136,9 +136,9 @@ h1{font-weight:300;font-size:clamp(28px,3.4vw,54px);line-height:1.15}
 .title p.error{color:#F0A4A4}
 .btn-cerrar{margin-top:18px;background:transparent;color:var(--gold-l);border:1px solid var(--gold);border-radius:999px;padding:8px 22px;font:inherit;cursor:pointer}
 .btn-cerrar:hover{box-shadow:0 0 18px rgba(217,160,78,.45)}
-.fade-in{position:fixed;inset:0;background:#000;z-index:10;pointer-events:none;animation:fadeOutBlack .6s ease forwards}
-@keyframes fadeOutBlack{from{opacity:1}to{opacity:0}}
-body.sin-sonido .sound-btn,body.sin-sonido .sound-hint{display:none}
+/* Modo continuar: la pantalla ya estaba en Asesorías, aparece tal cual */
+body.sin-entrada .title,body.sin-entrada .feature,body.sin-entrada .line{animation:none}
+body.sin-entrada .logo-left,body.sin-entrada .logo-right{animation:halo 3s ease-in-out infinite}
 </style>
 </head>
 <body>
@@ -209,7 +209,6 @@ body.sin-sonido .sound-btn,body.sin-sonido .sound-hint{display:none}
     <svg class="off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6" fill="none"/></svg>
   </button>
   <div class="sound-hint" id="soundHint">Toca la pantalla para activar el sonido</div>
-  <div class="fade-out" id="fadeOut"></div>
   <script>
 // ===== Partículas =====
 (function crearParticulas() {
@@ -284,19 +283,22 @@ body.sin-sonido .sound-btn,body.sin-sonido .sound-hint{display:none}
 
 
 // ===== Comunicación con la página que abre esta pantalla =====
-// Esta pantalla se muestra:
-//  · ?modo=embed  -> dentro de Asesorías (iframe). El sonido lo reproduce
-//    Asesorías (el clic del botón "Ir a Xiris" lo habilita); el botón de
-//    sonido de aquí solo le avisa que silencie o active.
-//  · ?modo=entrar -> dentro de Xiris (/auth/sso) mientras se abre la sesión.
-// Mensajes que recibe (solo de la ventana que la contiene):
-//   {type:'xiris-conexion:listo'}          -> abre el candado y termina
-//   {type:'xiris-conexion:error', msg}     -> muestra el error
-//   {type:'xiris-conexion:sonido', on}     -> estado del sonido
-// Mensajes que envía: 'xiris-conexion:fin', 'xiris-conexion:cerrar',
-//   {type:'xiris-conexion:sonido', on}
+// Es UNA sola pantalla de principio a fin:
+//  · ?modo=embed     -> dentro de Asesorías (iframe). El sonido lo inicia
+//    Asesorías en el clic (activación previa); el botón de aquí le avisa.
+//  · ?modo=continuar -> dentro de Xiris, desde /auth/sso hasta el Dashboard.
+//    Aparece en el mismo estado (sin animación de entrada) y retoma el
+//    audio en el segundo ?at= donde iba.
+// Recibe (solo de la ventana que la contiene):
+//   {type:'xiris-conexion:listo'}       -> abre el candado y termina
+//   {type:'xiris-conexion:error', msg}  -> muestra el error
+//   {type:'xiris-conexion:sonido', on}  -> estado del sonido (modo embed)
+// Envía: 'xiris-conexion:cargada', 'xiris-conexion:fin',
+//   'xiris-conexion:cerrar', {type:'xiris-conexion:sonido', on}
 (function conexion() {
   const params = new URLSearchParams(location.search);
+  // En Xiris el segundo del audio (?at=) viene en la URL de la ventana que la contiene
+  try { const at = new URLSearchParams(window.parent.location.search).get('at'); if (at && !params.get('at')) params.set('at', at); } catch (e) {}
   const modo = params.get('modo') || 'embed';
   const padre = window.parent !== window ? window.parent : null;
   const enviar = (m) => padre && padre.postMessage(m, '*');
@@ -304,35 +306,65 @@ body.sin-sonido .sound-btn,body.sin-sonido .sound-hint{display:none}
   const lock = document.getElementById('lock');
   const btn = document.getElementById('soundBtn');
   const hint = document.getElementById('soundHint');
+  const VOL = 0.5;
   let terminado = false;
-
-  if (modo === 'entrar') {
-    document.body.classList.add('sin-sonido');
-    status.innerHTML = 'Verificando tu acceso.<br>Abriendo tu sesión en Xiris<span class="dots"><i>.</i><i>.</i><i>.</i></span>';
-    const f = document.createElement('div'); f.className = 'fade-in'; document.body.appendChild(f);
-  }
-
-  // Botón de sonido (solo modo embed)
   let sonando = true;
-  function uiSonido() {
-    btn.classList.toggle('playing', sonando);
-    const t = sonando ? 'Silenciar sonido' : 'Activar sonido';
-    btn.setAttribute('aria-label', t); btn.title = t;
-    hint.classList.remove('show');
+  let audio = null;
+  let fadeId;
+
+  function fade(hasta, ms, fin) {
+    if (!audio) return;
+    clearInterval(fadeId);
+    const desde = audio.volume; let i = 0;
+    fadeId = setInterval(() => {
+      i++;
+      try { audio.volume = Math.max(0, Math.min(1, desde + (hasta - desde) * (i / 20))); } catch (e) {}
+      if (i >= 20) { clearInterval(fadeId); fin && fin(); }
+    }, ms / 20);
   }
-  btn.addEventListener('click', () => { sonando = !sonando; uiSonido(); enviar({ type: 'xiris-conexion:sonido', on: sonando }); });
-  uiSonido();
+  function uiSonido(bloqueado) {
+    btn.classList.toggle('playing', sonando && !bloqueado);
+    btn.classList.toggle('blocked', !!bloqueado);
+    hint.classList.toggle('show', !!bloqueado);
+    const t = sonando && !bloqueado ? 'Silenciar sonido' : 'Activar sonido';
+    btn.setAttribute('aria-label', t); btn.title = t;
+  }
+
+  if (modo === 'continuar') {
+    document.body.classList.add('sin-entrada');
+    // Retoma el sonido donde iba en Asesorías (si el navegador lo permite)
+    audio = new Audio('ambient.mp3');
+    audio.loop = true;
+    const at = parseFloat(params.get('at') || '0');
+    const iniciar = () => {
+      if (!sonando || !audio.paused) return;
+      try { if (at > 0 && !audio.currentTime) audio.currentTime = at % 24; } catch (e) {}
+      audio.volume = at > 0 ? VOL : 0;
+      const p = audio.play();
+      if (p) p.then(() => { if (!at) fade(VOL, 1200); uiSonido(false); }).catch(() => uiSonido(true));
+    };
+    ['pointerdown', 'keydown', 'touchend'].forEach((ev) => document.addEventListener(ev, (e) => { if (!btn.contains(e.target)) iniciar(); }));
+    btn.addEventListener('click', () => {
+      if (audio.paused) { sonando = true; iniciar(); }
+      else { sonando = false; fade(0, 400, () => audio.pause()); uiSonido(false); }
+    });
+    if (params.get('at') === 'off') sonando = false;
+    uiSonido(false);
+    iniciar();
+  } else {
+    btn.addEventListener('click', () => { sonando = !sonando; uiSonido(false); enviar({ type: 'xiris-conexion:sonido', on: sonando }); });
+    uiSonido(false);
+  }
 
   window.addEventListener('message', (e) => {
     if (padre && e.source !== padre) return;
     const d = e.data || {};
-    if (d.type === 'xiris-conexion:sonido') { sonando = !!d.on; uiSonido(); }
+    if (d.type === 'xiris-conexion:sonido') { sonando = !!d.on; uiSonido(false); }
     if (d.type === 'xiris-conexion:listo' && !terminado) {
       terminado = true;
       lock.classList.add('unlocked');
       status.innerHTML = 'Acceso verificado.<br>Entrando a Xiris<span class="dots"><i>.</i><i>.</i><i>.</i></span>';
-      setTimeout(() => document.getElementById('fadeOut').classList.add('on'), 900);
-      setTimeout(() => enviar({ type: 'xiris-conexion:fin' }), 1650);
+      setTimeout(() => { fade(0, 700, () => audio && audio.pause()); enviar({ type: 'xiris-conexion:fin' }); }, 1000);
     }
     if (d.type === 'xiris-conexion:error') {
       terminado = true;
@@ -342,6 +374,8 @@ body.sin-sonido .sound-btn,body.sin-sonido .sound-hint{display:none}
       b.className = 'btn-cerrar'; b.textContent = d.boton || 'Cerrar';
       b.onclick = () => enviar({ type: 'xiris-conexion:cerrar' });
       status.after(b);
+      fade(0, 600, () => audio && audio.pause());
+      hint.classList.remove('show'); btn.style.display = 'none';
     }
   });
   enviar({ type: 'xiris-conexion:cargada' });

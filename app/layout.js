@@ -11,6 +11,7 @@ import { ThemeProvider } from '../lib/theme/themeContext';
 import { SessionProvider } from '../lib/auth/sessionContext';
 import { CallProvider } from '../lib/calls/callContext';
 import CallUI from '../components/calls/callUI';
+import ConexionOverlay from '../components/ui/conexionOverlay';
 
 export const metadata = {
   title: 'Xiris',
@@ -52,6 +53,7 @@ export default function RootLayout({ children }) {
             <Sidebar />
             <AppShell>{children}</AppShell>
             <CallUI />
+            <ConexionOverlay />
             </CallProvider>
           </SessionProvider>
         </ThemeProvider>
