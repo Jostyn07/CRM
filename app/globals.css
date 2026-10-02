@@ -1604,3 +1604,96 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
   .img-viewer-nav { width: 42px; height: 42px; }
   .img-viewer-nav.left { left: 6px; } .img-viewer-nav.right { right: 6px; }
 }
+
+/* ============================================================
+   LEADS — lista con tabla y tarjetas
+   ============================================================ */
+.leads-page { padding: 1.5rem; max-width: 1500px; }
+.leads-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 1.1rem; }
+.leads-head h1 { font-size: 1.75rem; font-weight: 800; display: flex; align-items: center; gap: 10px; margin: 0; letter-spacing: -0.01em; }
+.leads-head p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 0.92rem; }
+.leads-count { font-size: 0.95rem; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--color-active-bg); color: var(--color-text-muted); }
+
+.leads-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 0.9rem; }
+.leads-search {
+  flex: 1 1 320px; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px;
+  border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-card); color: var(--color-text-muted);
+}
+.leads-search:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent); }
+.leads-search input { flex: 1; border: none; outline: none; background: transparent; color: var(--color-text); font: inherit; font-size: 0.92rem; min-width: 0; }
+.leads-toolbar .btn { height: 44px; border-radius: 12px; }
+.leads-btn-on { border-color: var(--color-primary) !important; color: var(--color-primary) !important; }
+.leads-select {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 14px;
+  border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-card); color: var(--color-text-muted);
+}
+.leads-select select { border: none; outline: none; background: transparent; color: var(--color-text); font: inherit; font-size: 0.9rem; cursor: pointer; }
+.leads-select select option { background: var(--color-bg); color: var(--color-text); }
+.leads-view { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-card); }
+.leads-view button { width: 40px; height: 36px; border: none; border-radius: 9px; background: transparent; color: var(--color-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.leads-view button.on { background: linear-gradient(135deg, #e8c77e, #c99a3d); color: #171411; }
+
+.lead-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 0.9rem; }
+.lead-tab {
+  display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--color-border); background: var(--color-card); color: var(--color-text); font-size: 0.85rem; font-weight: 500;
+}
+.lead-tab:hover { border-color: var(--color-primary); }
+.lead-tab.on { background: linear-gradient(135deg, #e8c77e, #c99a3d); border-color: #c99a3d; color: #171411; }
+.lead-tab-count { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; background: var(--color-active-bg); color: var(--color-text-muted); }
+.lead-tab.on .lead-tab-count { background: rgba(255,255,255,0.25); color: inherit; }
+
+.lead-status {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid transparent; font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+}
+.lead-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+.lead-table-card { padding: 0; overflow-x: auto; border-radius: 16px; }
+.lead-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+.lead-table th { text-align: left; padding: 0.85rem 0.8rem; font-size: 0.78rem; font-weight: 600; color: var(--color-text-muted); white-space: nowrap; border-bottom: 1px solid var(--color-border); }
+.lead-table td { padding: 0.75rem 0.8rem; vertical-align: middle; border-bottom: 1px solid var(--color-border); }
+.lead-table tbody tr { cursor: pointer; transition: background .12s; }
+.lead-table tbody tr:hover { background: var(--color-active-bg); }
+.lead-table tbody tr.sel { background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
+.lead-table tbody tr:last-child td { border-bottom: none; }
+.lead-th-sort { display: inline-flex; align-items: center; gap: 5px; border: none; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.lead-th-sort.on, .lead-th-sort:hover { color: var(--color-primary); }
+.lead-name { font-weight: 700; }
+.lead-table .lead-name { min-width: 170px; }
+.lead-sub { display: flex; align-items: center; gap: 4px; font-size: 0.76rem; color: var(--color-text-muted); margin-top: 2px; }
+.lead-muted { color: var(--color-text-muted); }
+.lead-empty { text-align: center; color: var(--color-text-muted); padding: 2.5rem 1rem !important; }
+.lead-owner-empty { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--color-active-bg); }
+.lead-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lead-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+.lead-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
+.lead-card { padding: 1rem 1rem 0.4rem; border-radius: 16px; cursor: pointer; display: flex; flex-direction: column; gap: 12px; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.lead-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border)); }
+.lead-card.sel { border-color: var(--color-primary); }
+.lead-card-head { display: flex; align-items: center; gap: 10px; }
+.lead-avatar { border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+.lead-card-check { margin-right: 2px; opacity: 0; transition: opacity .12s; }
+.lead-card:hover .lead-card-check, .lead-card.sel .lead-card-check { opacity: 1; }
+.lead-card-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; font-size: 0.84rem; }
+.lead-card-info > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--color-text); }
+.lead-card-info > span > svg { color: var(--color-text-muted); flex-shrink: 0; }
+.lead-card-tags { min-height: 24px; }
+.lead-card-actions { display: flex; justify-content: space-around; border-top: 1px solid var(--color-border); padding-top: 4px; margin: 0 -0.4rem; }
+.lead-card-actions button { flex: 1; height: 38px; border: none; background: none; border-radius: 10px; color: var(--color-text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.lead-card-actions button:hover:not(:disabled) { background: var(--color-active-bg); color: var(--color-primary); }
+.lead-card-actions button:disabled { opacity: .35; cursor: default; }
+
+.lead-pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 0.9rem; font-size: 0.86rem; }
+.lead-pages { display: flex; align-items: center; gap: 4px; }
+.lead-pages button { min-width: 36px; height: 36px; padding: 0 8px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--color-text); cursor: pointer; font: inherit; display: inline-flex; align-items: center; justify-content: center; }
+.lead-pages button:hover:not(:disabled) { border-color: var(--color-border); }
+.lead-pages button.on { background: linear-gradient(135deg, #e8c77e, #c99a3d); color: #171411; font-weight: 700; }
+.lead-pages button:disabled { opacity: .35; cursor: default; }
+
+@media (max-width: 640px) {
+  .leads-page { padding: 1rem; }
+  .leads-head h1 { font-size: 1.45rem; }
+  .lead-grid { grid-template-columns: 1fr; }
+}

@@ -9,15 +9,15 @@ import RequirePermission from '../../components/ui/requirePermission';
 import Modal from '../../components/ui/modal';
 import LeadForm from '../../components/leads/leadForm';
 import LeadFilters, { toApiFilters } from '../../components/leads/leadFilters';
-import { StatusPill, TagChips } from '../../components/leads/tagPicker';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useLeadConfig } from '../../lib/leads/useLeadConfig';
 import { bulkUpdate, exportLeads, searchLeads, softDelete } from '../../lib/leads/api';
 import { downloadLeads } from '../../lib/leads/exportFile';
 import { trackEvent } from '../../lib/activity/tracker';
-import { relTime } from '../../lib/leads/format';
+import Icon, { IconText } from '../../components/ui/icon';
+import { LeadGrid, LeadTable, Pager, StatusTabs } from '../../components/leads/leadViews';
 
-const PAGE_SIZES = [25, 50, 100];
+const PAGE_SIZES = [10, 25, 50, 100];
 const SORTS = [
   { value: 'created_desc', label: 'Más recientes' },
   { value: 'created_asc', label: 'Más antiguos' },
@@ -54,6 +54,22 @@ function LeadsList() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [view, setView] = useState('list'); // 'list' | 'grid'
+  const [counts, setCounts] = useState({ all: null, byStatus: {} });
+
+  // Vista guardada por usuario en este navegador
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('xiris.leads.view');
+      if (v === 'grid' || v === 'list') setView(v);
+    } catch {}
+  }, []);
+  function changeView(v) {
+    setView(v);
+    try {
+      localStorage.setItem('xiris.leads.view', v);
+    } catch {}
+  }
 
   const apiFilters = useMemo(() => toApiFilters(filters, debounced, activeBranchId), [filters, debounced, activeBranchId]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
@@ -87,6 +103,29 @@ function LeadsList() {
   }, [load]);
 
   useEffect(() => setSelected([]), [apiFilters, page, pageSize, sort]);
+
+  // Conteo por estado (las pestañas): mismos filtros, sin el de estado
+  const baseFilters = useMemo(() => toApiFilters({ ...filters, status: '' }, debounced, activeBranchId), [filters, debounced, activeBranchId]);
+  const statusKey = config.statuses.map((x) => x.id).join(',');
+  useEffect(() => {
+    if (config.loading) return undefined;
+    let vivo = true;
+    (async () => {
+      try {
+        const [all, ...each] = await Promise.all([
+          searchLeads({ filters: baseFilters, page: 1, pageSize: 1 }),
+          ...config.statuses.map((x) => searchLeads({ filters: { ...baseFilters, status_ids: [x.id] }, page: 1, pageSize: 1 })),
+        ]);
+        if (vivo) setCounts({ all: all.total, byStatus: Object.fromEntries(config.statuses.map((x, i) => [x.id, each[i].total])) });
+      } catch {
+        /* los conteos son informativos */
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseFilters, statusKey, config.loading, total]);
 
   function changeFilters(next) {
     setFilters(next);
@@ -128,75 +167,106 @@ function LeadsList() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const allOnPage = rows.length > 0 && rows.every((r) => selected.includes(r.id));
   const toggleAll = () => setSelected(allOnPage ? [] : rows.map((r) => r.id));
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
+  const emptyText = debounced || activeFilterCount ? 'Ningún lead coincide con la búsqueda.' : 'Todavía no hay leads.';
+  async function deleteOne(r) {
+    if (!confirm(`¿Enviar a "${`${r.first_name ?? ''} ${r.last_name ?? ''}`.trim()}" a la papelera?`)) return;
+    try {
+      await softDelete([r.id]);
+      trackEvent('lead.delete', { entityType: 'leads', entityId: r.id });
+      flash('Lead enviado a la papelera.');
+      await load();
+    } catch (e) {
+      flash(e.message);
+    }
+  }
+
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 1400 }}>
+    <main className="leads-page">
       {/* Encabezado */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: '1rem' }}>
+      <div className="leads-head">
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Leads</h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-            {total.toLocaleString('es-CO')} lead(s){activeBranch ? ` · ${activeBranch.name}` : ''}
-          </p>
+          <h1>
+            Leads <span className="leads-count">{(counts.all ?? total).toLocaleString('es-CO')}</span>
+          </h1>
+          <p>Gestiona y da seguimiento a todos tus leads{activeBranch ? ` · ${activeBranch.name}` : ''}.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('leads.delete') && (
             <a className="btn btn-secondary" href="/leads/papelera">
-              🗑️ Papelera
+              <IconText name="trash-2" size={16}>Papelera</IconText>
             </a>
           )}
           {can('leads.import') && (
             <a className="btn btn-secondary" href="/imports">
-              📥 Importar
+              <IconText name="upload" size={16}>Importar</IconText>
             </a>
           )}
           {can('leads.export') && (
             <button className="btn btn-secondary" onClick={() => handleExport(false)} disabled={busy || !total}>
-              📤 Exportar
+              <IconText name="download" size={16}>Exportar</IconText>
             </button>
           )}
           {can('leads.create') && (
             <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-              + Nuevo lead
+              <IconText name="plus" size={16}>Nuevo lead</IconText>
             </button>
           )}
         </div>
       </div>
 
-      {/* Búsqueda y orden */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-        <input
-          className="input"
-          style={{ flex: '1 1 280px' }}
-          placeholder="Buscar por nombre, teléfono, correo o empresa…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <button className="btn btn-secondary" onClick={() => setShowFilters((v) => !v)}>
-          Filtros{activeFilterCount ? ` (${activeFilterCount})` : ''}
+      {/* Búsqueda, filtros, orden y vista */}
+      <div className="leads-toolbar">
+        <label className="leads-search">
+          <Icon name="search" size={17} />
+          <input placeholder="Buscar por nombre, teléfono, correo o empresa…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </label>
+        <button className={`btn btn-secondary${showFilters || activeFilterCount ? ' leads-btn-on' : ''}`} onClick={() => setShowFilters((v) => !v)}>
+          <IconText name="filter" size={16}>Filtros{activeFilterCount ? ` (${activeFilterCount})` : ''}</IconText>
         </button>
         {activeFilterCount > 0 && (
           <button className="btn btn-secondary" onClick={() => changeFilters({})}>
             Limpiar
           </button>
         )}
-        <select className="input" style={{ width: 180 }} value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Ordenar">
-          {SORTS.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+        <label className="leads-select">
+          <Icon name="arrow-up-down" size={15} />
+          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Ordenar">
+            {SORTS.map((x) => (
+              <option key={x.value} value={x.value}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="leads-view" role="group" aria-label="Vista">
+          <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => changeView('list')} title="Vista de tabla" aria-pressed={view === 'list'}>
+            <Icon name="list" size={18} />
+          </button>
+          <button type="button" className={view === 'grid' ? 'on' : ''} onClick={() => changeView('grid')} title="Vista de tarjetas" aria-pressed={view === 'grid'}>
+            <Icon name="layout-grid" size={18} />
+          </button>
+        </div>
       </div>
 
       {showFilters && (
         <div className="card" style={{ marginBottom: '0.75rem', padding: '0.75rem' }}>
           <LeadFilters config={config} filters={filters} onChange={changeFilters} showAssigned={can('leads.view', 'branch')} />
         </div>
+      )}
+
+      {/* Pestañas por estado */}
+      {!config.loading && config.statuses.length > 0 && (
+        <StatusTabs
+          statuses={config.statuses}
+          counts={counts.byStatus}
+          total={counts.all}
+          value={filters.status || ''}
+          onChange={(id) => changeFilters({ ...filters, status: id })}
+        />
       )}
 
       {/* Acciones masivas */}
@@ -226,109 +296,47 @@ function LeadsList() {
       )}
       {error && <p style={{ color: 'var(--color-danger)', marginBottom: '0.75rem' }}>{error}</p>}
 
-      {/* Tabla */}
-      <div className="card scroll-x" style={{ padding: 0, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
-              <th style={th}>
-                <input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Seleccionar página" />
-              </th>
-              <th style={th}>Nombre</th>
-              <th style={th}>Contacto</th>
-              <th style={th}>Empresa</th>
-              <th style={th}>Estado</th>
-              <th style={th}>Fuente</th>
-              <th style={th}>Responsable</th>
-              <th style={th}>Etiquetas</th>
-              <th style={th}>Último contacto</th>
-              <th style={th}>Creado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={10} style={{ ...td, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                  Cargando…
-                </td>
-              </tr>
-            )}
-            {!loading && rows.length === 0 && (
-              <tr>
-                <td colSpan={10} style={{ ...td, textAlign: 'center', color: 'var(--color-text-muted)', padding: '2rem' }}>
-                  {debounced || activeFilterCount ? 'Ningún lead coincide con la búsqueda.' : 'Todavía no hay leads.'}
-                </td>
-              </tr>
-            )}
-            {!loading &&
-              rows.map((r) => (
-                <tr
-                  key={r.id}
-                  onClick={() => router.push(`/leads/${r.id}`)}
-                  style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer', background: selected.includes(r.id) ? 'var(--color-active-bg)' : undefined }}
-                >
-                  <td style={td} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} aria-label="Seleccionar lead" />
-                  </td>
-                  <td style={{ ...td, fontWeight: 600 }}>
-                    {r.first_name} {r.last_name}
-                    {!activeBranchId && config.maps.branch[r.branch_id] && (
-                      <div style={{ fontWeight: 400, fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>📍 {config.maps.branch[r.branch_id].name}</div>
-                    )}
-                  </td>
-                  <td style={td}>
-                    <div>{r.phone_normalized || '—'}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{r.email_normalized}</div>
-                  </td>
-                  <td style={td}>{r.company_name || '—'}</td>
-                  <td style={td}>
-                    <StatusPill status={config.maps.status[r.status_id]} />
-                  </td>
-                  <td style={td}>{config.maps.source[r.source_id]?.name ?? '—'}</td>
-                  <td style={td}>{config.maps.user[r.assigned_user_id]?.name ?? <span style={{ color: 'var(--color-text-muted)' }}>Sin asignar</span>}</td>
-                  <td style={td}>
-                    <TagChips tagIds={r.tag_ids} tagMap={config.maps.tag} />
-                  </td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.last_activity_at ? relTime(r.last_activity_at) : <span style={{ color: 'var(--color-text-muted)' }}>Sin contacto</span>}</td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleDateString('es-CO')}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+      {view === 'grid' ? (
+        <LeadGrid
+          rows={rows}
+          loading={loading}
+          emptyText={emptyText}
+          config={config}
+          showBranch={!activeBranchId}
+          selected={selected}
+          onToggle={toggle}
+          canDelete={can('leads.delete')}
+          onDelete={deleteOne}
+        />
+      ) : (
+        <LeadTable
+          rows={rows}
+          loading={loading}
+          emptyText={emptyText}
+          config={config}
+          showBranch={!activeBranchId}
+          selected={selected}
+          allOnPage={allOnPage}
+          onToggleAll={toggleAll}
+          onToggle={toggle}
+          sort={sort}
+          onSort={setSort}
+          canDelete={can('leads.delete')}
+          onDelete={deleteOne}
+        />
+      )}
 
-      {/* Paginación */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', fontSize: '0.85rem', flexWrap: 'wrap', gap: 8 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          Por página
-          <select
-            className="input"
-            style={{ width: 80, height: 32 }}
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
-          >
-            {PAGE_SIZES.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            ← Anterior
-          </button>
-          <span>
-            Página {page} de {totalPages}
-          </span>
-          <button className="btn btn-secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-            Siguiente →
-          </button>
-        </div>
-      </div>
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        sizes={PAGE_SIZES}
+        onPage={setPage}
+        onSize={(n) => {
+          setPageSize(n);
+          setPage(1);
+        }}
+      />
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Nuevo lead" width={720}>
         {!config.loading && (
@@ -389,6 +397,3 @@ function BulkBar({ count, config, busy, canAssign, canUpdate, canDelete, canExpo
     </div>
   );
 }
-
-const th = { padding: '0.6rem 0.75rem', fontWeight: 500, fontSize: '0.78rem', whiteSpace: 'nowrap' };
-const td = { padding: '0.6rem 0.75rem', verticalAlign: 'top' };
