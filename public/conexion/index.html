@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conectando con Xiris</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0D0D0F; --bg2:#1F1F23; --panel:#141416;
+  --gold-l:#F2C77A; --gold:#D9A04E; --gold-d:#8A5A22;
+  --text:#F5F5F5; --muted:#A8A8A8;
+  --logo:clamp(120px,14vw,230px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Outfit',system-ui,sans-serif;color:var(--text);
+  background:radial-gradient(ellipse at 50% 40%,var(--bg2) 0%,var(--bg) 70%);
+  overflow:hidden;min-height:100vh;
+}
+
+/* ---------- Fondo ---------- */
+.glow{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none}
+.glow-a{width:60vw;height:40vw;left:-20vw;bottom:-20vw;background:var(--gold-d);opacity:.35;animation:breathe 9s ease-in-out infinite}
+.glow-b{width:40vw;height:30vw;right:-15vw;top:10vh;background:var(--gold-d);opacity:.15;animation:breathe 11s ease-in-out infinite reverse}
+.waves{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+.wave-group{}
+.particles{position:fixed;inset:0;pointer-events:none}
+.particle{position:absolute;border-radius:50%;background:var(--gold-l);box-shadow:0 0 6px var(--gold-l);animation:float linear infinite}
+
+/* ---------- Escenario ---------- */
+.stage{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(32px,6vh,72px);padding:24px 16px}
+
+.title{text-align:center;animation:rise .9s ease-out both}
+h1{font-weight:300;font-size:clamp(28px,3.4vw,54px);line-height:1.15}
+.brand{display:block;font-weight:700;font-size:clamp(46px,5vw,80px);
+  background:linear-gradient(180deg,var(--gold-l),#B07A35);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 18px rgba(217,160,78,.35))}
+.title p{margin-top:14px;color:var(--muted);font-size:clamp(15px,1.3vw,22px);line-height:1.5}
+.dots i{font-style:normal;opacity:0;animation:dot 1.5s infinite}
+.dots i:nth-child(2){animation-delay:.25s}.dots i:nth-child(3){animation-delay:.5s}
+
+/* ---------- Conector ---------- */
+.connector{display:flex;align-items:center;width:min(1100px,100%);justify-content:space-between}
+.logo{flex:none;width:var(--logo);height:var(--logo);border-radius:50%;padding:3px;
+  background:linear-gradient(135deg,var(--gold-l),var(--gold-d));
+  box-shadow:0 0 40px rgba(217,160,78,.45);animation:halo 3s ease-in-out infinite}
+.logo img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;background:var(--panel)}
+.logo-left{animation:in-left 1s cubic-bezier(.2,.8,.2,1) .2s both, halo 3s ease-in-out 1.2s infinite}
+.logo-right{animation:in-right 1s cubic-bezier(.2,.8,.2,1) .2s both, halo 3s ease-in-out 2.7s infinite}
+
+.line{position:relative;flex:1;display:flex;align-items:center;padding:0 clamp(8px,2vw,24px);animation:fade 1s ease .8s both}
+.node{width:14px;height:14px;border-radius:50%;background:var(--gold-l);box-shadow:0 0 15px var(--gold-l);flex:none}
+.track{position:relative;flex:1;height:2px;margin:0 6px;
+  background:repeating-linear-gradient(90deg,rgba(217,160,78,.6) 0 2px,transparent 2px 12px);overflow:visible}
+.spark{position:absolute;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:#fff3d6;
+  box-shadow:0 0 10px var(--gold-l),0 0 20px var(--gold);animation:travel 2.4s linear infinite;opacity:0}
+.spark.s2{animation-delay:.8s}.spark.s3{animation-delay:1.6s}
+.lock{position:relative;flex:none;width:clamp(56px,5vw,80px);height:clamp(56px,5vw,80px);border-radius:50%;
+  background:var(--panel);border:2px solid var(--gold);display:grid;place-items:center;
+  animation:heartbeat 2s ease-in-out infinite}
+.lock svg{grid-area:1/1;width:42%;height:42%;stroke:var(--gold-l);stroke-width:2;fill:none;stroke-linecap:round;transition:opacity .4s,transform .4s}
+.lock svg rect{fill:var(--gold-l);stroke:none}
+.ico-open{opacity:0;transform:scale(.7)}
+.lock.unlocked .ico-locked{opacity:0;transform:scale(.7)}
+.lock.unlocked .ico-open{opacity:1;transform:scale(1)}
+.lock.unlocked{animation:burst .8s ease-out forwards}
+.reflection{position:absolute;left:50%;top:calc(50% + 70px);width:300px;max-width:60%;height:2px;transform:translateX(-50%);
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);filter:blur(2px);opacity:.7}
+
+/* ---------- Características ---------- */
+.features{display:flex;gap:clamp(24px,8vw,180px);flex-wrap:wrap;justify-content:center}
+.feature{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;max-width:240px;animation:rise .7s ease-out both}
+.feature:nth-child(1){animation-delay:1.1s}.feature:nth-child(2){animation-delay:1.25s}.feature:nth-child(3){animation-delay:1.4s}
+.f-ico{width:64px;height:64px;border-radius:50%;background:#1A1A1E;border:1px solid rgba(217,160,78,.5);display:grid;place-items:center}
+.f-ico svg{width:28px;height:28px;fill:none;stroke:var(--gold);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.feature h3{font-weight:500;font-size:clamp(16px,1.1vw,20px)}
+.feature p{color:var(--muted);font-size:clamp(13px,.85vw,15px)}
+
+.fade-out{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .7s ease;z-index:10}
+.fade-out.on{opacity:1}
+
+/* ---------- Keyframes ---------- */
+@keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes in-left{from{opacity:0;transform:translateX(-80px)}to{opacity:1;transform:none}}
+@keyframes in-right{from{opacity:0;transform:translateX(80px)}to{opacity:1;transform:none}}
+@keyframes halo{0%,100%{box-shadow:0 0 30px rgba(217,160,78,.35)}50%{box-shadow:0 0 60px rgba(217,160,78,.7)}}
+@keyframes heartbeat{0%,100%{box-shadow:0 0 15px rgba(217,160,78,.4)}50%{box-shadow:0 0 38px rgba(217,160,78,.9)}}
+@keyframes burst{0%{box-shadow:0 0 30px rgba(242,199,122,.9)}100%{box-shadow:0 0 90px 20px rgba(242,199,122,0);border-color:var(--gold-l)}}
+@keyframes travel{0%{left:0;opacity:0}10%{opacity:1}90%{opacity:1}100%{left:100%;opacity:0}}
+@keyframes dot{0%,20%{opacity:0}40%,100%{opacity:1}}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+@keyframes sway{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+@keyframes float{0%{transform:translateY(0);opacity:0}15%{opacity:var(--o)}100%{transform:translateY(-140px);opacity:0}}
+
+/* ---------- Móvil ---------- */
+@media (max-width:700px){
+  body{overflow:auto}
+  .connector{--logo:96px}
+  .reflection{display:none}
+  .features{flex-direction:column;align-items:center;gap:24px}
+}
+
+/* ---------- Accesibilidad ---------- */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .spark,.particle{display:none}
+}
+
+/* Logo S&S: fondo claro para que se lea "ASESORÍAS" (texto negro) */
+.logo-left img{background:radial-gradient(circle,#ffffff 55%,#f3ead8 100%)}
+
+/* ---------- Botón de sonido ---------- */
+.sound-btn{position:fixed;right:20px;bottom:20px;z-index:5;width:48px;height:48px;border-radius:50%;cursor:pointer;
+  background:rgba(20,20,22,.8);border:1px solid rgba(217,160,78,.6);display:grid;place-items:center;
+  transition:box-shadow .3s,transform .2s}
+.sound-btn:hover{transform:scale(1.06);box-shadow:0 0 20px rgba(217,160,78,.5)}
+.sound-btn svg{grid-area:1/1;width:22px;height:22px;stroke:var(--gold-l);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sound-btn svg path:first-child{fill:var(--gold-l)}
+.sound-btn .on{display:none}
+.sound-btn.playing .on{display:block}
+.sound-btn.playing .off{display:none}
+.sound-btn.playing{animation:heartbeat 2s ease-in-out infinite}
+
+/* Sonido bloqueado por el navegador */
+.sound-btn.blocked{animation:heartbeat 1.2s ease-in-out infinite}
+.sound-hint{position:fixed;right:80px;bottom:30px;z-index:5;font-size:14px;color:var(--gold-l);
+  background:rgba(20,20,22,.85);border:1px solid rgba(217,160,78,.4);padding:6px 12px;border-radius:999px;
+  opacity:0;transform:translateX(10px);transition:opacity .4s,transform .4s;pointer-events:none}
+.sound-hint.show{opacity:1;transform:none}
+
+/* Estados agregados para Xiris */
+.title p.error{color:#F0A4A4}
+.btn-cerrar{margin-top:18px;background:transparent;color:var(--gold-l);border:1px solid var(--gold);border-radius:999px;padding:8px 22px;font:inherit;cursor:pointer}
+.btn-cerrar:hover{box-shadow:0 0 18px rgba(217,160,78,.45)}
+.fade-in{position:fixed;inset:0;background:#000;z-index:10;pointer-events:none;animation:fadeOutBlack .6s ease forwards}
+@keyframes fadeOutBlack{from{opacity:1}to{opacity:0}}
+body.sin-sonido .sound-btn,body.sin-sonido .sound-hint{display:none}
+</style>
+</head>
+<body>
+  <!-- Fondo: brillos, ondas y partículas -->
+  <div class="glow glow-a"></div>
+  <div class="glow glow-b"></div>
+  <svg class="waves" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <linearGradient id="gl" x1="0" x2="1">
+        <stop offset="0" stop-color="#D9A04E" stop-opacity="0"/>
+        <stop offset=".5" stop-color="#F2C77A" stop-opacity=".9"/>
+        <stop offset="1" stop-color="#D9A04E" stop-opacity=".1"/>
+      </linearGradient>
+      <linearGradient id="gr" x1="1" x2="0">
+        <stop offset="0" stop-color="#D9A04E" stop-opacity="0"/>
+        <stop offset=".5" stop-color="#F2C77A" stop-opacity=".9"/>
+        <stop offset="1" stop-color="#D9A04E" stop-opacity=".1"/>
+      </linearGradient>
+      <filter id="blur"><feGaussianBlur stdDeviation="6"/></filter>
+    </defs>
+    <g class="wave-group left" fill="none" stroke="url(#gl)"></g>
+    <g class="wave-group right" fill="none" stroke="url(#gr)"></g>
+  </svg>
+  <div class="particles" aria-hidden="true"></div>
+
+  <main class="stage">
+    <header class="title">
+      <h1>Conectando tu cuenta de<span class="brand">Xiris</span></h1>
+      <p id="status">Estamos abriendo tu sesión de forma segura.<br>Serás redirigido en unos segundos<span class="dots"><i>.</i><i>.</i><i>.</i></span></p>
+    </header>
+
+    <section class="connector" aria-hidden="true">
+      <div class="logo logo-left"><img src="logo-ss.png" alt="S&amp;S Asesorías"></div>
+
+      <div class="line">
+        <span class="node"></span>
+        <div class="track"><span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span></div>
+        <div class="lock" id="lock">
+          <svg class="ico-locked" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none"/></svg>
+          <svg class="ico-open" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2" fill="none"/></svg>
+        </div>
+        <div class="track"><span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span></div>
+        <span class="node"></span>
+        <div class="reflection"></div>
+      </div>
+
+      <div class="logo logo-right"><img src="logo-xiris.png" alt="Xiris"></div>
+    </section>
+
+    <section class="features">
+      <div class="feature">
+        <div class="f-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg></div>
+        <h3>Conexión segura</h3><p>Tus datos están protegidos</p>
+      </div>
+      <div class="feature">
+        <div class="f-ico"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></div>
+        <h3>Redirección automática</h3><p>En unos segundos</p>
+      </div>
+      <div class="feature">
+        <div class="f-ico"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></div>
+        <h3>Integración con Xiris</h3><p>Para brindarte una mejor experiencia</p>
+      </div>
+    </section>
+  </main>
+
+  <button class="sound-btn" id="soundBtn" aria-label="Activar sonido" title="Activar sonido">
+    <svg class="on" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none"/></svg>
+    <svg class="off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6" fill="none"/></svg>
+  </button>
+  <div class="sound-hint" id="soundHint">Toca la pantalla para activar el sonido</div>
+  <div class="fade-out" id="fadeOut"></div>
+  <script>
+// ===== Partículas =====
+(function crearParticulas() {
+  const cont = document.querySelector('.particles');
+  const total = window.innerWidth < 700 ? 25 : 60;
+  for (let i = 0; i < total; i++) {
+    const p = document.createElement('span');
+    p.className = 'particle';
+    const size = 1.5 + Math.random() * 3.5;
+    const lado = Math.random() < 0.5 ? Math.random() * 35 : 65 + Math.random() * 35;
+    p.style.cssText = `width:${size}px;height:${size}px;left:${lado}%;top:${30 + Math.random() * 55}%;` +
+      `--o:${(0.3 + Math.random() * 0.7).toFixed(2)};animation-duration:${5 + Math.random() * 7}s;animation-delay:${-Math.random() * 10}s`;
+    cont.appendChild(p);
+  }
+})();
+
+// ===== Ondas animadas =====
+// Cada hilo sale del borde y converge en el logo; su forma ondula con senos superpuestos.
+(function ondas() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const hilos = [
+    // y0: altura en el borde, amp: amplitud, freq: ondas, vel: velocidad, w: grosor, op: opacidad, glow: resplandor
+    { y0: 180, amp: 40, freq: 1.2, vel: 0.6, w: 0.8, op: 0.35 },
+    { y0: 260, amp: 55, freq: 1.5, vel: 0.8, w: 1.5, op: 0.75 },
+    { y0: 340, amp: 45, freq: 1.8, vel: 1.0, w: 1.0, op: 0.5 },
+    { y0: 470, amp: 60, freq: 1.3, vel: 0.7, w: 1.2, op: 0.55 },
+    { y0: 560, amp: 70, freq: 1.0, vel: 0.5, w: 9, op: 0.3, glow: true },
+    { y0: 640, amp: 50, freq: 1.6, vel: 0.9, w: 1.0, op: 0.45 },
+    { y0: 720, amp: 55, freq: 1.4, vel: 0.75, w: 1.5, op: 0.75 },
+    { y0: 820, amp: 40, freq: 1.1, vel: 0.65, w: 1.0, op: 0.4 },
+  ];
+  const destinoY = 548, xLogo = 700, ancho = xLogo + 50, pasos = 48;
+
+  function crear(grupo) {
+    return hilos.map((h, i) => {
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('stroke-width', h.w);
+      p.setAttribute('opacity', h.op);
+      if (h.glow) p.setAttribute('filter', 'url(#blur)');
+      grupo.appendChild(p);
+      return { p, h, fase: i * 1.7 };
+    });
+  }
+  const izq = crear(document.querySelector('.wave-group.left'));
+  const der = crear(document.querySelector('.wave-group.right'));
+
+  function trazo(h, fase, t, espejo) {
+    let d = '';
+    for (let i = 0; i <= pasos; i++) {
+      const u = i / pasos;                       // 0 = borde, 1 = logo
+      const xb = -50 + u * ancho;
+      const base = h.y0 + (destinoY - h.y0) * (u * u * (3 - 2 * u)); // converge suave
+      const atenua = Math.min(1, (1 - u) * 2.5);                        // se calma al llegar al logo
+      const onda = Math.sin(u * h.freq * Math.PI * 2 - t * h.vel + fase) * h.amp
+                 + Math.sin(u * 3.1 + t * h.vel * 0.6 + fase) * h.amp * 0.35;
+      const y = base + onda * atenua;
+      const x = espejo ? 1920 - xb : xb;
+      d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    return d;
+  }
+
+  const reducido = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function frame(ms) {
+    const t = ms / 1000;
+    izq.forEach(o => o.p.setAttribute('d', trazo(o.h, o.fase, t, false)));
+    der.forEach(o => o.p.setAttribute('d', trazo(o.h, o.fase + 0.9, t, true)));
+    if (!reducido) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+
+// ===== Comunicación con la página que abre esta pantalla =====
+// Esta pantalla se muestra:
+//  · ?modo=embed  -> dentro de Asesorías (iframe). El sonido lo reproduce
+//    Asesorías (el clic del botón "Ir a Xiris" lo habilita); el botón de
+//    sonido de aquí solo le avisa que silencie o active.
+//  · ?modo=entrar -> dentro de Xiris (/auth/sso) mientras se abre la sesión.
+// Mensajes que recibe (solo de la ventana que la contiene):
+//   {type:'xiris-conexion:listo'}          -> abre el candado y termina
+//   {type:'xiris-conexion:error', msg}     -> muestra el error
+//   {type:'xiris-conexion:sonido', on}     -> estado del sonido
+// Mensajes que envía: 'xiris-conexion:fin', 'xiris-conexion:cerrar',
+//   {type:'xiris-conexion:sonido', on}
+(function conexion() {
+  const params = new URLSearchParams(location.search);
+  const modo = params.get('modo') || 'embed';
+  const padre = window.parent !== window ? window.parent : null;
+  const enviar = (m) => padre && padre.postMessage(m, '*');
+  const status = document.getElementById('status');
+  const lock = document.getElementById('lock');
+  const btn = document.getElementById('soundBtn');
+  const hint = document.getElementById('soundHint');
+  let terminado = false;
+
+  if (modo === 'entrar') {
+    document.body.classList.add('sin-sonido');
+    status.innerHTML = 'Verificando tu acceso.<br>Abriendo tu sesión en Xiris<span class="dots"><i>.</i><i>.</i><i>.</i></span>';
+    const f = document.createElement('div'); f.className = 'fade-in'; document.body.appendChild(f);
+  }
+
+  // Botón de sonido (solo modo embed)
+  let sonando = true;
+  function uiSonido() {
+    btn.classList.toggle('playing', sonando);
+    const t = sonando ? 'Silenciar sonido' : 'Activar sonido';
+    btn.setAttribute('aria-label', t); btn.title = t;
+    hint.classList.remove('show');
+  }
+  btn.addEventListener('click', () => { sonando = !sonando; uiSonido(); enviar({ type: 'xiris-conexion:sonido', on: sonando }); });
+  uiSonido();
+
+  window.addEventListener('message', (e) => {
+    if (padre && e.source !== padre) return;
+    const d = e.data || {};
+    if (d.type === 'xiris-conexion:sonido') { sonando = !!d.on; uiSonido(); }
+    if (d.type === 'xiris-conexion:listo' && !terminado) {
+      terminado = true;
+      lock.classList.add('unlocked');
+      status.innerHTML = 'Acceso verificado.<br>Entrando a Xiris<span class="dots"><i>.</i><i>.</i><i>.</i></span>';
+      setTimeout(() => document.getElementById('fadeOut').classList.add('on'), 900);
+      setTimeout(() => enviar({ type: 'xiris-conexion:fin' }), 1650);
+    }
+    if (d.type === 'xiris-conexion:error') {
+      terminado = true;
+      status.className = 'error';
+      status.textContent = d.msg || 'No se pudo conectar con Xiris.';
+      const b = document.createElement('button');
+      b.className = 'btn-cerrar'; b.textContent = d.boton || 'Cerrar';
+      b.onclick = () => enviar({ type: 'xiris-conexion:cerrar' });
+      status.after(b);
+    }
+  });
+  enviar({ type: 'xiris-conexion:cargada' });
+})();
+</script>
+</body>
+</html>
