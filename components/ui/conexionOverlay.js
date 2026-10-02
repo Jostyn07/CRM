@@ -1,135 +1,94 @@
 'use client';
-// Ruta: components/ui/conexionOverlay.js
-// Pantalla "Conectando tu cuenta de Xiris" al entrar desde Asesorías (SSO).
-// Vive en el layout raíz para que NO se desmonte al pasar de /auth/sso al
-// Dashboard: es la misma pantalla de principio a fin, sin cortes. Se retira
-// (candado abierto + desvanecido) solo cuando el Dashboard ya está listo.
-//
-// La pantalla lee ?at= (segundo del audio) de la URL de esta ventana.
-// Comunicación con /auth/sso (mismo documento, eventos de window):
-//   'conexion:error'  { detail: mensaje }  -> muestra el error
-//   'conexion:entrar'                       -> sesión abierta, navegando al destino
+// Ruta: app/auth/sso/page.js
+// Destino del inicio de sesión desde otra plataforma (SSO).
+// Recibe ?t=<ticket de un solo uso>, lo canjea en la Edge Function "sso"
+// y abre la sesión con el enlace que genera el servidor. La contraseña
+// nunca pasa por el navegador.
+// Mientras tanto muestra una pantalla de carga (oscura, con el logo).
 
 import { useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
-import { useSession } from '../../lib/auth/sessionContext';
+import { supabase } from '../../../lib/supabase/client';
 
-const FLAG = 'xiris-conexion';
+const log = (...a) => console.info('[Xiris SSO]', ...a);
 
-export default function ConexionOverlay() {
-  const pathname = usePathname();
-  const { user, loading } = useSession();
-  const [activo, setActivo] = useState(pathname === '/auth/sso');
-  const [saliendo, setSaliendo] = useState(false);
-  const src = '/conexion/index.html?modo=continuar';
-  const frame = useRef(null);
-  const cargada = useRef(false);
-  const pendientes = useRef([]);
-  const entrando = useRef(false);
-  const liberado = useRef(false);
+export default function SsoPage() {
+  const [error, setError] = useState(null);
+  const started = useRef(false);
 
-  const enviar = (m) => {
-    if (cargada.current) frame.current?.contentWindow?.postMessage(m, window.location.origin);
-    else pendientes.current.push(m);
-  };
-
-  // Activación (en /auth/sso o si la navegación quedó a mitad)
   useEffect(() => {
-    if (pathname === '/auth/sso') setActivo(true);
-    else {
+    if (started.current) return;
+    started.current = true;
+    const limite = setTimeout(() => setError('La conexión está tardando demasiado. Vuelve a intentarlo.'), 20000);
+    (async () => {
+      const token = new URLSearchParams(window.location.search).get('t');
+      // El ticket no se queda en la barra ni en el historial
+      window.history.replaceState(null, '', '/auth/sso');
       try {
-        if (sessionStorage.getItem(FLAG)) setActivo(true);
-      } catch {}
-    }
-  }, [pathname]);
-
-  // Mensajes de la pantalla y de /auth/sso
-  useEffect(() => {
-    if (!activo) return undefined;
-    const onMsg = (e) => {
-      if (e.origin !== window.location.origin || e.source !== frame.current?.contentWindow) return;
-      const d = e.data || {};
-      if (d.type === 'xiris-conexion:cargada') {
-        cargada.current = true;
-        pendientes.current.splice(0).forEach((m) => frame.current.contentWindow.postMessage(m, window.location.origin));
-      }
-      if (d.type === 'xiris-conexion:fin') {
-        setSaliendo(true);
-        setTimeout(() => {
+        if (!token) throw new Error('El enlace no es válido.');
+        // Si había otra sesión abierta en este navegador, se cierra primero
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        try {
+          window.localStorage.removeItem('lf_session_cache');
+        } catch {}
+        log('canjeando ticket');
+        const { data, error: fnErr } = await supabase.functions.invoke('sso', { body: { action: 'redeem', token } });
+        if (fnErr) {
+          let msg = 'No se pudo validar el acceso.';
           try {
-            sessionStorage.removeItem(FLAG);
+            msg = (await fnErr.context.json()).error || msg;
           } catch {}
-          setActivo(false);
-          cargada.current = false;
-          entrando.current = false;
-          liberado.current = false;
-          setSaliendo(false);
-        }, 750);
+          throw new Error(msg);
+        }
+        log('abriendo sesión');
+        const { error: otpErr } = await supabase.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
+        if (otpErr) throw new Error('No se pudo abrir la sesión. Vuelve a intentarlo desde la plataforma.');
+        log('entrando');
+        window.location.replace(data.redirect || '/dashboard');
+      } catch (e) {
+        clearTimeout(limite);
+        log('error:', e.message);
+        setError(e.message);
       }
-      if (d.type === 'xiris-conexion:cerrar') window.location.replace('/login');
-    };
-    const onError = (e) => enviar({ type: 'xiris-conexion:error', msg: e.detail, boton: 'Ir al inicio de sesión' });
-    const onEntrar = () => {
-      entrando.current = true;
-      try {
-        sessionStorage.setItem(FLAG, '1');
-      } catch {}
-    };
-    window.addEventListener('message', onMsg);
-    window.addEventListener('conexion:error', onError);
-    // Si /auth/sso avisó antes de que esta pantalla escuchara
-    if (window.__conexionError) onError({ detail: window.__conexionError });
-    window.addEventListener('conexion:entrar', onEntrar);
-    return () => {
-      window.removeEventListener('message', onMsg);
-      window.removeEventListener('conexion:error', onError);
-      window.removeEventListener('conexion:entrar', onEntrar);
-    };
-  }, [activo]);
+    })();
+    return () => clearTimeout(limite);
+  }, []);
 
-  // Ya en el destino: retirar la pantalla cuando el Dashboard pintó
-  // (con la sesión cargada, o a los 5 s como máximo pase lo que pase)
-  const liberar = () => {
-    if (liberado.current) return;
-    liberado.current = true;
-    requestAnimationFrame(() => requestAnimationFrame(() => enviar({ type: 'xiris-conexion:listo' })));
-    // Si la pantalla no responde, se quita igual
-    setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'xiris-conexion:fin' }, origin: window.location.origin, source: frame.current?.contentWindow })), 2500);
-  };
-  useEffect(() => {
-    if (!activo || pathname === '/auth/sso' || liberado.current) return undefined;
-    const t = setTimeout(liberar, 5000);
-    return () => clearTimeout(t);
-  }, [activo, pathname]);
-  useEffect(() => {
-    if (!activo || pathname === '/auth/sso' || loading || !user || liberado.current) return undefined;
-    const t = setTimeout(liberar, 1200);
-    return () => clearTimeout(t);
-  }, [activo, pathname, loading, user]);
-
-  if (!activo) return null;
   return (
-    <div
-      aria-live="polite"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 10000,
-        background: '#0D0D0F',
-        opacity: saliendo ? 0 : 1,
-        transition: 'opacity .7s ease',
-        pointerEvents: saliendo ? 'none' : 'auto',
-      }}
-    >
-      {(
-        <iframe
-          ref={frame}
-          src={src}
-          title="Conectando con Xiris"
-          allow="autoplay"
-          style={{ width: '100%', height: '100%', border: 0, display: 'block', background: '#0D0D0F' }}
-        />
+    <main className="sso-carga">
+      <div className="sso-logo">
+        <span className="sso-anillo" />
+        <img src="/conexion/logo-xiris.png" alt="Xiris" />
+      </div>
+      {error ? (
+        <>
+          <p className="sso-error">{error}</p>
+          <a className="sso-btn" href="/login">
+            Ir al inicio de sesión
+          </a>
+        </>
+      ) : (
+        <>
+          <p className="sso-texto">Cargando Xiris</p>
+          <div className="sso-barra">
+            <span />
+          </div>
+        </>
       )}
-    </div>
+      <style>{`
+        .sso-carga{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+          background:radial-gradient(ellipse at 50% 40%,#1F1F23 0%,#0D0D0F 70%);color:#F5F5F5;font-family:'Outfit',system-ui,sans-serif;padding:16px;text-align:center}
+        .sso-logo{position:relative;width:120px;height:120px}
+        .sso-logo img{position:absolute;inset:8px;width:104px;height:104px;border-radius:50%;object-fit:cover;box-shadow:0 0 40px rgba(217,160,78,.35)}
+        .sso-anillo{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(217,160,78,.18);border-top-color:#F2C77A;animation:sso-giro 1.1s linear infinite}
+        .sso-texto{margin:0;font-size:17px;letter-spacing:.04em;color:#D9D9D9}
+        .sso-barra{width:180px;height:3px;border-radius:3px;background:rgba(217,160,78,.18);overflow:hidden}
+        .sso-barra span{display:block;width:40%;height:100%;border-radius:3px;background:linear-gradient(90deg,#D9A04E,#F2C77A);animation:sso-barra 1.3s ease-in-out infinite}
+        .sso-error{margin:0;max-width:380px;color:#F0A4A4;font-size:16px}
+        .sso-btn{color:#F2C77A;border:1px solid #D9A04E;border-radius:999px;padding:8px 22px;text-decoration:none}
+        @keyframes sso-giro{to{transform:rotate(360deg)}}
+        @keyframes sso-barra{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+        @media (prefers-reduced-motion:reduce){.sso-anillo,.sso-barra span{animation:none}}
+      `}</style>
+    </main>
   );
 }
