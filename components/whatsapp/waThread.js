@@ -17,11 +17,26 @@ import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
 import { WA_EDIT_MINUTES, WA_MAX_BYTES, canEditWa, editMessage, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
 import { playSent } from '../../lib/sounds';
 import FileDropZone from '../ui/fileDropZone';
+import ImageViewer from '../chat/imageViewer';
 
-function Media({ m }) {
+// La URL de la imagen para el visor (acepta mensajes vacíos)
+const useWaUrl = (m) => useMediaUrl(m || {});
+
+function Media({ m, onOpenImage }) {
   const url = useMediaUrl(m);
   if (!url) return <div style={{ width: 200, height: 110, borderRadius: 8, background: 'rgba(0,0,0,0.08)' }} />;
-  if (m.kind === 'image') return <img src={url} alt="" style={{ display: 'block', maxWidth: 280, maxHeight: 320, borderRadius: 8 }} />;
+  if (m.kind === 'image')
+    return (
+      <img
+        src={url}
+        alt=""
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenImage?.(m.id);
+        }}
+        style={{ display: 'block', maxWidth: 280, maxHeight: 320, borderRadius: 8, cursor: 'zoom-in' }}
+      />
+    );
   if (m.kind === 'video') return <video src={url} controls preload="metadata" style={{ display: 'block', maxWidth: 300, borderRadius: 8 }} />;
   if (m.kind === 'audio') return <audio src={url} controls preload="metadata" style={{ display: 'block', width: 260 }} />;
   return (
@@ -50,6 +65,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
   const [files, setFiles] = useState([]);
   const [replyTo, setReplyTo] = useState(null);
   const [editing, setEditing] = useState(null); // { id, text, saving, error }
+  const [viewer, setViewer] = useState(null); // id de la imagen abierta
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [emoji, setEmoji] = useState(false);
@@ -235,7 +251,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                       {previewOf(quoted).slice(0, 80)}
                     </div>
                   )}
-                  {(m.media_path || m.media_url) && <Media m={m} />}
+                  {(m.media_path || m.media_url) && <Media m={m} onOpenImage={setViewer} />}
                   {m.kind === 'missing_call' && <div><IconText name="phone-missed" size={16}>Llamada perdida de WhatsApp</IconText></div>}
                   {editing?.id === m.id ? (
                     <div style={{ display: 'grid', gap: 6, minWidth: 240 }}>
@@ -432,6 +448,22 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
         <p style={{ padding: '0.7rem 1rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}>
           No tienes permiso para enviar mensajes en esta conversación.
         </p>
+      )}
+      {viewer && (
+        <ImageViewer
+          items={(messages ?? [])
+            .filter((x) => x.kind === 'image' && (x.media_path || x.media_url) && !x.is_deleted)
+            .map((x) => ({
+              id: x.id,
+              src: x,
+              title: x.direction === 'out' ? (x.sender_user_id ? userMap[x.sender_user_id]?.name ?? 'Usuario' : 'Desde el celular') : 'Cliente',
+              subtitle: `${new Date(x.created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} · ${hora(x.created_at)}`,
+              caption: x.body,
+            }))}
+          startId={viewer}
+          useUrl={useWaUrl}
+          onClose={() => setViewer(null)}
+        />
       )}
     </FileDropZone>
   );

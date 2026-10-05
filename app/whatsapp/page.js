@@ -15,7 +15,7 @@ import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
 import { fechaCorta } from '../../lib/chat/api';
-import { formatChat, listChannels, listConversations, setReadLater, useWaMode } from '../../lib/whatsapp/api';
+import { formatChat, listChannels, listConversations, setNoReply, setReadLater, useWaMode } from '../../lib/whatsapp/api';
 import SoundToggle from '../../components/ui/soundToggle';
 
 export default function WhatsappPage() {
@@ -41,6 +41,7 @@ function Inbox() {
   const [selected, setSelected] = useState(params.get('c'));
   const [q, setQ] = useState('');
   const [onlyUnread, setOnlyUnread] = useState(false);
+  const [onlyNeedsReply, setOnlyNeedsReply] = useState(false);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
@@ -91,10 +92,20 @@ function Inbox() {
       .filter(
         (c) =>
           (!onlyUnread || Number(c.unread) > 0 || c.read_later) &&
+          (!onlyNeedsReply || c.needs_reply) &&
           (!term || `${c.lead_name ?? ''} ${c.contact_name ?? ''} ${c.chat_id}`.toLowerCase().includes(term.replace(/\D/g, '') || term))
       )
       .sort((a, b) => (b.read_later ? 1 : 0) - (a.read_later ? 1 : 0)); // "leer más tarde" arriba
-  }, [convs, q, onlyUnread]);
+  }, [convs, q, onlyUnread, onlyNeedsReply]);
+
+  async function markNoReply(c, on) {
+    try {
+      await setNoReply(c.id, on);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   // Leer más tarde: al marcarla se cierra, para que no se quite al leer
   async function toggleReadLater(c) {
@@ -142,6 +153,10 @@ function Inbox() {
           )}
           <label style={{ fontSize: '0.82rem', display: 'flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={onlyUnread} onChange={(e) => setOnlyUnread(e.target.checked)} /> Solo no leídos
+          </label>
+          <label style={{ fontSize: '0.82rem', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={onlyNeedsReply} onChange={(e) => setOnlyNeedsReply(e.target.checked)} /> Necesitan respuesta
+            {convs && <span className="needs-reply-count">{convs.filter((c) => c.needs_reply).length}</span>}
           </label>
         </div>
       </div>
@@ -194,6 +209,11 @@ function Inbox() {
                         {c.last_direction === 'out' ? <Icon name="reply" size={13} style={{ verticalAlign: '-2px', marginRight: 4, transform: 'scaleX(-1)' }} /> : ''}
                         {c.last_message_preview}
                       </span>
+                      {c.needs_reply && (
+                        <span className="needs-reply-badge" title="El cliente escribió y aún no se le responde">
+                          <Icon name="reply" size={11} /> Necesita respuesta
+                        </span>
+                      )}
                       {c.read_later && (
                         <span title="Leer más tarde" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>
                           <Icon name="bookmark" size={12} /> Más tarde
@@ -233,9 +253,25 @@ function Inbox() {
                   {conv && (
                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                       {formatChat(conv.chat_id)} · {conv.assigned_user_id ? `Responsable: ${userMap[conv.assigned_user_id]?.name ?? ''}` : 'Sin responsable'}
+                      {conv.no_reply_by && (
+                        <>
+                          {' · '}
+                          <span title={new Date(conv.no_reply_at).toLocaleString('es-CO')}>
+                            Marcada sin respuesta por {userMap[conv.no_reply_by]?.name ?? 'un usuario'}
+                          </span>{' '}
+                          <button type="button" className="link-btn" onClick={() => markNoReply(conv, false)}>
+                            Deshacer
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
+                {conv?.needs_reply && (
+                  <button className="btn btn-secondary" onClick={() => markNoReply(conv, true)} title="Quita la marca de 'Necesita respuesta' (queda registrado quién lo hizo)">
+                    <IconText name="check" size={15}>No necesita respuesta</IconText>
+                  </button>
+                )}
                 {conv && (
                   <button className="btn btn-secondary" onClick={() => toggleReadLater(conv)} title={conv.read_later ? 'Quitar la marca' : 'Se marca y se cierra; la verás arriba en la lista'}>
                     <IconText name="bookmark" size={15}>{conv.read_later ? 'Quitar de más tarde' : 'Leer más tarde'}</IconText>

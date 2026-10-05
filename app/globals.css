@@ -1567,7 +1567,7 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 
 /* Visor de imágenes del chat */
 .img-viewer {
-  position: fixed; inset: 0; z-index: 1000;
+  position: fixed; inset: 0; z-index: 1000; overflow: hidden; user-select: none;
   background: rgba(8, 7, 6, 0.92);
   display: flex; align-items: center; justify-content: center;
   animation: file-drop-in .15s ease-out;
@@ -1697,3 +1697,20 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
   .leads-head h1 { font-size: 1.45rem; }
   .lead-grid { grid-template-columns: 1fr; }
 }
+
+.img-viewer-top { z-index: 2; }
+.img-viewer-nav { z-index: 2; }
+.img-viewer-btn:disabled { opacity: .35; cursor: default; }
+.img-viewer-zoom { min-width: 58px; height: 38px; border-radius: 999px; cursor: pointer; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); color: #fff; font: inherit; font-size: .8rem; }
+.img-viewer-stage img { transform-origin: center center; will-change: transform; }
+
+/* Necesita respuesta */
+.needs-reply-badge {
+  display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+  padding: 1px 7px; border-radius: 999px; font-size: 0.66rem; font-weight: 700; white-space: nowrap;
+  color: #b45309; background: rgba(245, 158, 11, 0.16); border: 1px solid rgba(245, 158, 11, 0.35);
+}
+[data-theme="dark"] .needs-reply-badge { color: #fbbf24; }
+.needs-reply-count { font-size: 0.7rem; font-weight: 700; padding: 0 6px; border-radius: 999px; color: #b45309; background: rgba(245, 158, 11, 0.16); }
+[data-theme="dark"] .needs-reply-count { color: #fbbf24; }
+.link-btn { border: none; background: none; padding: 0; color: var(--color-primary); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }

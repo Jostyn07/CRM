@@ -19,8 +19,8 @@ import Composer from '../../components/chat/composer';
 import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupDialogs';
 import ForwardDialog from '../../components/chat/forwardDialog';
 import {
-  EDIT_MINUTES, MSG_COLS, diaSeparador, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
-  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  EDIT_MINUTES, MSG_COLS, diaSeparador, hora, useSignedUrl, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
+  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setNoReply, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
@@ -402,6 +402,15 @@ export default function ComunicacionApp() {
     }
   }
 
+  async function handleNoReply(c, on = true) {
+    try {
+      await setNoReply(c.conversation_id, on);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function handleClearChat(c) {
     if (!window.confirm('¿Borrar este chat? Se borra solo para ti; los demás lo seguirán viendo.')) return;
     try {
@@ -577,6 +586,11 @@ export default function ComunicacionApp() {
                             </>
                           )}
                         </span>
+                        {c.needs_reply && (
+                          <span className="needs-reply-badge" title="Te escribió y aún no le contestas">
+                            <Icon name="reply" size={11} /> Responder
+                          </span>
+                        )}
                         {c.read_later && (
                           <span title="Leer más tarde" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>
                             <Icon name="bookmark" size={12} /> Más tarde
@@ -627,6 +641,11 @@ export default function ComunicacionApp() {
                 {isGroup && (
                   <button className="btn btn-secondary" onClick={() => setGroupInfo(true)}>
                     Info del grupo
+                  </button>
+                )}
+                {conv?.needs_reply && (
+                  <button className="btn btn-secondary" onClick={() => handleNoReply(conv, true)} title="Quita la marca de pendiente por responder">
+                    <IconText name="check" size={15}>No necesita respuesta</IconText>
                   </button>
                 )}
                 {conv && (
@@ -771,10 +790,17 @@ export default function ComunicacionApp() {
       />
       {lightbox && (
         <ImageViewer
-          images={messages.filter((x) => x.kind === 'image' && x.attachment_path && !x.deleted_at)}
+          items={messages
+            .filter((x) => x.kind === 'image' && x.attachment_path && !x.deleted_at)
+            .map((x) => ({
+              id: x.id,
+              src: x.attachment_path,
+              title: x.sender_id === me ? 'Tú' : userMap[x.sender_id]?.name ?? 'Usuario',
+              subtitle: `${new Date(x.created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} · ${hora(x.created_at)}`,
+              caption: x.body,
+            }))}
           startId={lightbox}
-          userMap={userMap}
-          me={me}
+          useUrl={useSignedUrl}
           onClose={() => setLightbox(null)}
         />
       )}
