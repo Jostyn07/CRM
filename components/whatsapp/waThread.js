@@ -16,6 +16,7 @@ import WaClientBar from '../clients/waClientBar';
 import { INTENTS, URGENCY, aiReply } from '../../lib/ai/api';
 import { WA_EDIT_MINUTES, WA_MAX_BYTES, canEditWa, editMessage, getMessages, markRead, previewOf, sendFile, sendText, useMediaUrl } from '../../lib/whatsapp/api';
 import { playSent } from '../../lib/sounds';
+import { addNote, getLeadTimeline } from '../../lib/tasks/api';
 import FileDropZone from '../ui/fileDropZone';
 import ImageViewer from '../chat/imageViewer';
 
@@ -49,13 +50,13 @@ function Media({ m, onOpenImage }) {
 
 function Ticks({ status, error }) {
   if (status === 'pending') return <Icon name="clock" size={14} title="Enviando…" style={{ verticalAlign: '-2px' }} />;
-  if (status === 'error') return <span title={error || 'Error al enviar'} style={{ color: '#fecaca', display: 'inline-flex' }}><Icon name="triangle-alert" size={14} /></span>;
-  if (status === 'read') return <span title="Leído" style={{ color: '#7dd3fc', display: 'inline-flex' }}><Icon name="check-check" size={14} /></span>;
+  if (status === 'error') return <span title={error || 'Error al enviar'} style={{ color: 'var(--color-danger, #dc2626)', display: 'inline-flex' }}><Icon name="triangle-alert" size={14} /></span>;
+  if (status === 'read') return <span title="Leído" style={{ color: '#0ea5e9', display: 'inline-flex' }}><Icon name="check-check" size={14} /></span>;
   if (status === 'delivered') return <span title="Entregado" style={{ display: 'inline-flex' }}><Icon name="check-check" size={14} /></span>;
   return <span title="Enviado" style={{ display: 'inline-flex' }}><Icon name="check" size={14} /></span>;
 }
 
-export default function WaThread({ conversationId, orgId, userMap, canSend = true, height = '100%' }) {
+export default function WaThread({ conversationId, orgId, userMap, canSend = true, height = '100%', leadId = null, contactName = 'Cliente', showClientBar = true }) {
   const { user, can } = useSession();
   const canAi = can('ai.reply');
   const [ai, setAi] = useState(null); // { loading, replies, error }
@@ -66,6 +67,8 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
   const [replyTo, setReplyTo] = useState(null);
   const [editing, setEditing] = useState(null); // { id, text, saving, error }
   const [viewer, setViewer] = useState(null); // id de la imagen abierta
+  const [mode, setMode] = useState('msg'); // 'msg' = al cliente · 'note' = nota interna
+  const [notes, setNotes] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [emoji, setEmoji] = useState(false);
@@ -123,9 +126,24 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
     };
   }, [conversationId, load]);
 
+  // Notas internas del lead (solo las ve el equipo, nunca se envían al cliente)
+  const loadNotes = useCallback(async () => {
+    if (!leadId) return setNotes([]);
+    try {
+      const rows = await getLeadTimeline(leadId, 100);
+      setNotes(rows.filter((r) => r.type === 'note_created' && r.body));
+    } catch {
+      setNotes([]);
+    }
+  }, [leadId]);
+  useEffect(() => {
+    setMode('msg');
+    loadNotes();
+  }, [loadNotes, conversationId]);
+
   useEffect(() => {
     if (stick.current) endRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages?.length]);
+  }, [messages?.length, notes.length]);
 
   async function older() {
     stick.current = false;
@@ -136,7 +154,26 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
     setMessages((prev) => [...o, ...prev]);
   }
 
+  async function submitNote() {
+    const body = text.trim();
+    if (!body || !leadId || sending) return;
+    setSending(true);
+    setError(null);
+    stick.current = true;
+    try {
+      await addNote(leadId, body);
+      trackEvent('whatsapp.note', { entityType: 'wa_conversations', entityId: conversationId });
+      setText('');
+      await loadNotes();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function submit() {
+    if (mode === 'note') return submitNote();
     const body = text.trim();
     if ((!body && !files.length) || sending) return;
     setSending(true);
@@ -186,6 +223,14 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
     }
   }
 
+  // Mensajes y notas internas, en orden
+  const timeline = messages
+    ? [
+        ...messages.map((m) => ({ t: 'm', m, at: m.created_at })),
+        ...notes.filter((n) => !messages.length || !hasMore || n.created_at >= messages[0].created_at).map((n) => ({ t: 'n', n, at: n.created_at })),
+      ].sort((a, b) => new Date(a.at) - new Date(b.at))
+    : [];
+
   const byProvider = Object.fromEntries((messages ?? []).filter((m) => m.provider_message_id).map((m) => [m.provider_message_id, m]));
   let lastDay = null;
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem', padding: '4px 6px', color: 'var(--color-text)' };
@@ -197,9 +242,9 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
       onFiles={addFiles}
       style={{ display: 'flex', flexDirection: 'column', height, minHeight: 0 }}
     >
-      <WaClientBar conversationId={conversationId} />
+      {showClientBar && <WaClientBar conversationId={conversationId} />}
       <div
-        style={{ flex: 1, overflowY: 'auto', padding: '0.8rem 1.2rem', display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--color-bg, transparent)' }}
+        className="wa-messages"
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -212,10 +257,29 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
         )}
         {!messages ? (
           <p style={{ textAlign: 'center', fontSize: '0.85rem' }}>Cargando…</p>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && notes.length === 0 ? (
           <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '2rem' }}>Aún no hay mensajes en esta conversación.</p>
         ) : (
-          messages.map((m) => {
+          timeline.map((it) => {
+            if (it.t === 'n') {
+              const n = it.n;
+              const nday = diaSeparador(n.created_at);
+              const showNDay = nday !== lastDay;
+              lastDay = nday;
+              return (
+                <div key={`n-${n.id}`} style={{ display: 'contents' }}>
+                  {showNDay && <div className="wa-day"><span>{nday}</span></div>}
+                  <div className="wa-note">
+                    <div className="wa-note-head">
+                      <Icon name="lock" size={12} /> Nota interna · {userMap[n.actor_id]?.name ?? 'Usuario'}
+                    </div>
+                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{n.body}</div>
+                    <div className="wa-meta">{hora(n.created_at)}</div>
+                  </div>
+                </div>
+              );
+            }
+            const m = it.m;
             const out = m.direction === 'out';
             const day = diaSeparador(m.created_at);
             const showDay = day !== lastDay;
@@ -223,29 +287,12 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
             const quoted = m.reply_to_provider_id ? byProvider[m.reply_to_provider_id] : null;
             return (
               <div key={m.id} style={{ display: 'contents' }}>
-                {showDay && (
-                  <div style={{ alignSelf: 'center', fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '0.5rem 0', textTransform: 'capitalize' }}>{day}</div>
-                )}
+                {showDay && <div className="wa-day"><span>{day}</span></div>}
                 <div
                   onDoubleClick={() => canSend && setReplyTo(m)}
                   title={canSend ? 'Doble clic para responder' : undefined}
-                  style={{
-                    alignSelf: out ? 'flex-end' : 'flex-start',
-                    maxWidth: '75%',
-                    padding: m.kind === 'text' || !m.kind ? '0.5rem 0.75rem' : 4,
-                    borderRadius: 12,
-                    borderBottomRightRadius: out ? 4 : 12,
-                    borderBottomLeftRadius: out ? 12 : 4,
-                    background: out ? (m.status === 'error' ? '#b91c1c' : '#128C7E') : 'var(--color-active-bg)',
-                    color: out ? '#fff' : 'var(--color-text)',
-                    fontSize: '0.88rem',
-                  }}
+                  className={`wa-bubble ${out ? 'out' : 'in'}${m.status === 'error' ? ' err' : ''}${m.kind === 'text' || !m.kind ? '' : ' media'}`}
                 >
-                  {out && (
-                    <div style={{ fontSize: '0.68rem', opacity: 0.8, marginBottom: 2, padding: m.kind === 'text' ? 0 : '2px 6px 0' }}>
-                      {m.sender_user_id ? userMap[m.sender_user_id]?.name ?? 'Usuario' : m.from_phone_app ? <IconText name="smartphone" size={12} gap={4}>Desde el celular</IconText> : ''}
-                    </div>
-                  )}
                   {quoted && (
                     <div style={{ borderLeft: '3px solid currentColor', opacity: 0.85, padding: '2px 8px', marginBottom: 4, fontSize: '0.78rem', background: 'rgba(0,0,0,0.08)', borderRadius: 6 }}>
                       {previewOf(quoted).slice(0, 80)}
@@ -312,6 +359,11 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                   </div>
                   {out && m.status === 'error' && m.error && <div style={{ fontSize: '0.7rem', marginTop: 2 }}><IconText name="triangle-alert" size={12} gap={4}>{m.error}</IconText></div>}
                 </div>
+                <div className={`wa-caption ${out ? 'out' : 'in'}`}>
+                  {out
+                    ? `${m.sender_user_id ? userMap[m.sender_user_id]?.name ?? 'Usuario' : 'Equipo'} · ${m.from_phone_app ? 'Desde celular' : 'Desde plataforma'}`
+                    : `${contactName} · WhatsApp`}
+                </div>
               </div>
             );
           })
@@ -320,10 +372,24 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
       </div>
 
       {canSend ? (
-        <div
-          style={{ borderTop: '1px solid var(--color-border)', padding: '0.5rem 0.8rem', position: 'relative' }}
-        >
-          {replyTo && (
+        <div className={`wa-composer${mode === 'note' ? ' note' : ''}`}>
+          <div className="wa-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={mode === 'msg'} className={mode === 'msg' ? 'on msg' : ''} onClick={() => setMode('msg')}>
+              <Icon name="message-circle" size={15} /> Mensaje al cliente
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'note'}
+              className={mode === 'note' ? 'on note' : ''}
+              disabled={!leadId}
+              title={leadId ? 'La nota queda en la ficha del lead; el cliente no la ve' : 'Esta conversación no tiene un lead vinculado'}
+              onClick={() => setMode('note')}
+            >
+              <Icon name="lock" size={14} /> Nota interna <span className="wa-tab-hint">· Solo visible para el equipo</span>
+            </button>
+          </div>
+          {mode === 'msg' && replyTo && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 8px', marginBottom: 6, borderLeft: '3px solid #128C7E', background: 'var(--color-active-bg)', borderRadius: 6, fontSize: '0.8rem' }}>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Respondiendo: {previewOf(replyTo)}</span>
               <button style={iconBtn} onClick={() => setReplyTo(null)}>
@@ -370,7 +436,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
             </div>
           )}
           <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
-            {canAi && (
+            {canAi && mode === 'msg' && (
               <button
                 style={iconBtn}
                 title="Sugerir respuestas con IA (usa lo que escribiste como indicación)"
@@ -403,9 +469,11 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                 />
               )}
             </div>
-            <button style={iconBtn} title="Adjuntar (máx. 10 MB)" onClick={() => fileRef.current?.click()}>
-              <Icon name="paperclip" size={18} />
-            </button>
+            {mode === 'msg' && (
+              <button style={iconBtn} title="Adjuntar (máx. 10 MB)" onClick={() => fileRef.current?.click()}>
+                <Icon name="paperclip" size={18} />
+              </button>
+            )}
             <input
               ref={fileRef}
               type="file"
@@ -420,7 +488,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
               ref={taRef}
               className="input"
               rows={1}
-              placeholder="Escribe un mensaje de WhatsApp…"
+              placeholder={mode === 'note' ? 'Escribe una nota para el equipo (el cliente no la verá)…' : `Escribe un mensaje a ${contactName}…`}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onPaste={(e) => {
@@ -438,11 +506,17 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
               }}
               style={{ flex: 1, resize: 'none', minHeight: 40, maxHeight: 140 }}
             />
-            <button className="btn btn-primary" style={{ background: '#128C7E', borderColor: '#128C7E' }} disabled={sending || (!text.trim() && !files.length)} onClick={submit}>
-              {sending ? '…' : 'Enviar'}
+            <button
+              className={`wa-send${mode === 'note' ? ' note' : ''}`}
+              disabled={sending || (mode === 'note' ? !text.trim() : !text.trim() && !files.length)}
+              onClick={submit}
+            >
+              <Icon name={mode === 'note' ? 'lock' : 'send'} size={16} />
+              {sending ? 'Enviando…' : mode === 'note' ? 'Guardar nota' : 'Enviar mensaje'}
             </button>
           </div>
           {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.78rem', marginTop: 4 }}>{error}</p>}
+          <div className="wa-hint">Enter para enviar · Shift + Enter para una nueva línea</div>
         </div>
       ) : (
         <p style={{ padding: '0.7rem 1rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}>

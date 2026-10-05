@@ -1,7 +1,8 @@
 'use client';
 // Ruta: app/whatsapp/page.js
-// Bandeja de WhatsApp: conversaciones que puedo ver (según los números
-// permitidos y mi alcance), no leídos, filtro por número y búsqueda.
+// Bandeja de atención de WhatsApp: conversaciones (según los números
+// permitidos y mi alcance) con filtros, la conversación al centro y la
+// ficha del cliente a la derecha.
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -9,7 +10,7 @@ import RequirePermission from '../../components/ui/requirePermission';
 import WaThread from '../../components/whatsapp/waThread';
 import WazzupFrame from '../../components/whatsapp/wazzupFrame';
 import WaModeToggle from '../../components/whatsapp/waModeToggle';
-import Icon, { IconText, StatusDot } from '../../components/ui/icon';
+import Icon, { IconText } from '../../components/ui/icon';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
@@ -17,6 +18,32 @@ import { trackEvent } from '../../lib/activity/tracker';
 import { fechaCorta } from '../../lib/chat/api';
 import { formatChat, listChannels, listConversations, setNoReply, setReadLater, useWaMode } from '../../lib/whatsapp/api';
 import SoundToggle from '../../components/ui/soundToggle';
+import WaClientPanel from '../../components/whatsapp/waClientPanel';
+import { bulkUpdate } from '../../lib/leads/api';
+
+// Filtros de la bandeja
+const FILTERS = [
+  { key: 'all', label: 'Todas', test: () => true },
+  { key: 'reply', label: 'Por responder', test: (c) => c.needs_reply },
+  { key: 'unassigned', label: 'Sin asignar', test: (c) => !c.assigned_user_id },
+  { key: 'mine', label: 'Mis conversaciones', test: (c, me) => c.assigned_user_id === me },
+  { key: 'unread', label: 'No leídas', test: (c) => Number(c.unread) > 0 },
+  { key: 'later', label: 'Más tarde', test: (c) => c.read_later },
+  { key: 'resolved', label: 'Resueltas', test: (c) => !!c.no_reply_by },
+];
+
+// Estado de la conversación para el equipo
+function statusOf(c) {
+  if (c.needs_reply) return { key: 'reply', label: 'Por responder' };
+  if (c.no_reply_by) return { key: 'resolved', label: 'Resuelta' };
+  return { key: 'follow', label: 'En seguimiento' };
+}
+
+function initials(name) {
+  const parts = (name || '').replace(/[^\p{L}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '#';
+  return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 export default function WhatsappPage() {
   return (
@@ -32,7 +59,7 @@ function Inbox() {
   const { user, profile, can, scopeOf } = useSession();
   const [mode, setMode] = useWaMode();
   const canGlobal = scopeOf('whatsapp.view') === 'organization';
-  const { userMap } = useOrgUsers();
+  const { users, userMap } = useOrgUsers();
   const router = useRouter();
   const params = useSearchParams();
   const [channels, setChannels] = useState([]);
@@ -40,8 +67,8 @@ function Inbox() {
   const [convs, setConvs] = useState(null);
   const [selected, setSelected] = useState(params.get('c'));
   const [q, setQ] = useState('');
-  const [onlyUnread, setOnlyUnread] = useState(false);
-  const [onlyNeedsReply, setOnlyNeedsReply] = useState(false);
+  const [filter, setFilter] = useState('all'); // all | reply | unassigned | mine | unread | resolved | later
+  const [panel, setPanel] = useState(true); // ficha del cliente visible
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
@@ -89,14 +116,26 @@ function Inbox() {
   const list = useMemo(() => {
     const term = q.trim().toLowerCase();
     return (convs ?? [])
-      .filter(
-        (c) =>
-          (!onlyUnread || Number(c.unread) > 0 || c.read_later) &&
-          (!onlyNeedsReply || c.needs_reply) &&
-          (!term || `${c.lead_name ?? ''} ${c.contact_name ?? ''} ${c.chat_id}`.toLowerCase().includes(term.replace(/\D/g, '') || term))
-      )
+      .filter((c) => FILTERS.find((f) => f.key === filter).test(c, user?.id))
+      .filter((c) => !term || `${c.lead_name ?? ''} ${c.contact_name ?? ''} ${c.chat_id}`.toLowerCase().includes(term.replace(/\D/g, '') || term))
       .sort((a, b) => (b.read_later ? 1 : 0) - (a.read_later ? 1 : 0)); // "leer más tarde" arriba
-  }, [convs, q, onlyUnread, onlyNeedsReply]);
+  }, [convs, q, filter, user?.id]);
+
+  const counts = useMemo(
+    () => Object.fromEntries(FILTERS.map((f) => [f.key, (convs ?? []).filter((c) => f.test(c, user?.id)).length])),
+    [convs, user?.id]
+  );
+
+  async function assign(c, userId) {
+    if (!c.lead_id) return;
+    try {
+      await bulkUpdate([c.lead_id], { assigned_user_id: userId || null });
+      trackEvent('whatsapp.assign', { entityType: 'leads', entityId: c.lead_id });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   async function markNoReply(c, on) {
     try {
@@ -128,11 +167,31 @@ function Inbox() {
 
   if (!profile) return null;
 
+  // Salir: vuelve a la página donde estaba antes de entrar a WhatsApp
+  function exit() {
+    let back = '/dashboard';
+    try {
+      back = sessionStorage.getItem('xiris.lastPath') || back;
+    } catch {}
+    router.push(back);
+  }
+
+  const nameOf = (c) => c.lead_name || c.contact_name || formatChat(c.chat_id);
+  const showPanel = panel && conv && mode !== 'wazzup' && selected !== '__wazzup__';
+
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 1250, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: '1.3rem' }}>WhatsApp</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    <main className="wa-page">
+      {/* Barra superior propia: WhatsApp se usa a pantalla completa */}
+      <header className="wa-topbar">
+        <div className="wa-topbar-brand">
+          <span className="wa-topbar-logo">
+            <Icon name="message-circle" size={18} />
+          </span>
+          <strong>WhatsApp</strong>
+          <span className="wa-topbar-sep" />
+          <span className="wa-topbar-sub">Atención al cliente</span>
+        </div>
+        <div className="wa-page-tools">
           <SoundToggle />
           <WaModeToggle
             mode={mode}
@@ -142,7 +201,7 @@ function Inbox() {
             }}
           />
           {channels.length > 1 && (
-            <select className="input" style={{ width: 220 }} value={channel} onChange={(e) => setChannel(e.target.value)}>
+            <select className="input" style={{ width: 220 }} value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Número">
               <option value="">Todos mis números</option>
               {channels.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -151,148 +210,194 @@ function Inbox() {
               ))}
             </select>
           )}
-          <label style={{ fontSize: '0.82rem', display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input type="checkbox" checked={onlyUnread} onChange={(e) => setOnlyUnread(e.target.checked)} /> Solo no leídos
-          </label>
-          <label style={{ fontSize: '0.82rem', display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input type="checkbox" checked={onlyNeedsReply} onChange={(e) => setOnlyNeedsReply(e.target.checked)} /> Necesitan respuesta
-            {convs && <span className="needs-reply-count">{convs.filter((c) => c.needs_reply).length}</span>}
-          </label>
+          <span className="wa-topbar-avatar" title={profile.full_name || ''}>
+            {initials(profile.full_name || user?.email || '')}
+          </span>
+          <button type="button" className="wa-topbar-close" onClick={exit} title="Salir de WhatsApp" aria-label="Salir de WhatsApp">
+            <Icon name="x" size={20} />
+          </button>
         </div>
+      </header>
+
+      <div className="wa-page-head">
+        <div>
+          <h1>Bandeja de atención</h1>
+          <p>Un espacio para atender a tus clientes, en equipo.</p>
+        </div>
+        <span className="wa-page-badge">
+          <strong>WhatsApp</strong> · Atención al cliente
+        </span>
       </div>
 
-      {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-danger)', margin: '0 1.5rem 8px' }}>{error}</p>}
 
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', height: '74vh', padding: 0, overflow: 'hidden' }}>
-        <div style={{ borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ padding: '0.7rem', borderBottom: '1px solid var(--color-border)', display: 'grid', gap: 6 }}>
-            <input className="input" placeholder="Buscar por nombre o número…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className={`wa-layout${showPanel ? ' with-panel' : ''}`}>
+        {/* ---------------- Conversaciones */}
+        <section className="card wa-list">
+          <header className="wa-list-head">
+            <strong>Conversaciones</strong>
+            <span className="wa-chip-count">{FILTERS.find((f) => f.key === filter).label}</span>
+          </header>
+          <div className="wa-list-tools">
+            <label className="wa-search">
+              <Icon name="search" size={15} />
+              <input placeholder="Buscar por nombre o número…" value={q} onChange={(e) => setQ(e.target.value)} />
+            </label>
+            <div className="wa-filters">
+              {FILTERS.map((f) => (
+                <button key={f.key} type="button" className={filter === f.key ? 'on' : ''} onClick={() => setFilter(f.key)}>
+                  {f.label}
+                  {f.key !== 'all' && counts[f.key] > 0 && <span>{counts[f.key]}</span>}
+                </button>
+              ))}
+            </div>
             {mode === 'wazzup' && canGlobal && (
               <button className={`btn ${selected === '__wazzup__' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelected('__wazzup__')}>
                 <IconText name="inbox" size={16}>Bandeja completa de Wazzup</IconText>
               </button>
             )}
           </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="wa-list-items">
             {!convs ? (
-              <p style={{ padding: '1rem', fontSize: '0.85rem' }}>Cargando…</p>
+              <p className="wa-empty">Cargando…</p>
             ) : list.length === 0 ? (
-              <p style={{ padding: '1rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                {channels.length ? 'No hay conversaciones.' : 'No tienes números de WhatsApp asignados. Pide acceso al administrador.'}
-              </p>
+              <p className="wa-empty">{channels.length ? 'No hay conversaciones con este filtro.' : 'No tienes números de WhatsApp asignados. Pide acceso al administrador.'}</p>
             ) : (
               list.map((c) => {
                 const unread = Number(c.unread) || 0;
-                const name = c.lead_name || c.contact_name || formatChat(c.chat_id);
+                const st = statusOf(c);
                 return (
-                  <button
-                    key={c.id}
-                    onClick={() => open(c.id)}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '0.65rem 0.8rem',
-                      border: 'none',
-                      borderBottom: '1px solid var(--color-border)',
-                      background: c.id === selected ? 'var(--color-active-bg)' : 'transparent',
-                      color: 'var(--color-text)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                      <span style={{ fontWeight: unread ? 700 : 500, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fechaCorta(c.last_message_at)}</span>
+                  <button key={c.id} type="button" className={`wa-item${c.id === selected ? ' on' : ''}`} onClick={() => open(c.id)}>
+                    <div className="wa-item-row">
+                      <span className={`wa-item-name${unread ? ' bold' : ''}`}>{nameOf(c)}</span>
+                      <span className="wa-item-time">{fechaCorta(c.last_message_at)}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span style={{ flex: 1, fontSize: '0.78rem', color: unread ? 'var(--color-text)' : 'var(--color-text-muted)', fontWeight: unread ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {c.last_direction === 'out' ? <Icon name="reply" size={13} style={{ verticalAlign: '-2px', marginRight: 4, transform: 'scaleX(-1)' }} /> : ''}
+                    <div className="wa-item-row">
+                      <span className={`wa-item-preview${unread ? ' bold' : ''}`}>
+                        {c.last_direction === 'out' ? <Icon name="reply" size={12} style={{ verticalAlign: '-2px', marginRight: 4, transform: 'scaleX(-1)' }} /> : ''}
                         {c.last_message_preview}
                       </span>
-                      {c.needs_reply && (
-                        <span className="needs-reply-badge" title="El cliente escribió y aún no se le responde">
-                          <Icon name="reply" size={11} /> Necesita respuesta
-                        </span>
-                      )}
-                      {c.read_later && (
-                        <span title="Leer más tarde" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>
-                          <Icon name="bookmark" size={12} /> Más tarde
-                        </span>
-                      )}
-                      {unread > 0 && (
-                        <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: '#25D366', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {unread}
-                        </span>
-                      )}
+                      {unread > 0 && <span className="wa-unread">{unread > 99 ? '99+' : unread}</span>}
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                      {c.assigned_user_id ? <IconText name="user" size={12} gap={4}>{userMap[c.assigned_user_id]?.name ?? ''}</IconText> : <IconText name="triangle-alert" size={12} gap={4}>Sin asignar</IconText>}
-                      {channels.length > 1 && chName(c.channel_id) ? ` · ${chName(c.channel_id)}` : ''}
+                    <div className="wa-item-row">
+                      <span className="wa-item-owner">
+                        <Icon name="user" size={12} />
+                        {c.assigned_user_id ? userMap[c.assigned_user_id]?.name ?? '' : 'Sin asignar'}
+                        {channels.length > 1 && chName(c.channel_id) ? ` · ${chName(c.channel_id)}` : ''}
+                      </span>
+                      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                        {c.read_later && (
+                          <span className="wa-status later" title="Leer más tarde">
+                            <Icon name="bookmark" size={11} />
+                          </span>
+                        )}
+                        <span className={`wa-status ${st.key}`}>{st.label}</span>
+                      </span>
                     </div>
                   </button>
                 );
               })
             )}
           </div>
-        </div>
+          <footer className="wa-list-foot">Ordenadas por actividad reciente</footer>
+        </section>
 
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+        {/* ---------------- Conversación */}
+        <section className="card wa-center">
           {!selected ? (
-            <div style={{ margin: 'auto', color: 'var(--color-text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '1rem' }}>
-              Elige una conversación.
-              {mode === 'wazzup' && <div style={{ fontSize: '0.8rem', marginTop: 6 }}>Se abrirá en la ventana de Wazzup, con todo su historial.</div>}
+            <div className="wa-placeholder">
+              <Icon name="messages-square" size={34} />
+              <strong>Elige una conversación</strong>
+              <span>{mode === 'wazzup' ? 'Se abrirá en la ventana de Wazzup, con todo su historial.' : 'Aquí verás los mensajes y podrás responder.'}</span>
             </div>
           ) : selected === '__wazzup__' ? (
             <WazzupFrame global />
           ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.7rem 1rem', borderBottom: '1px solid var(--color-border)' }}>
-                <StatusDot color="#25D366" size={12} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <strong>{conv ? conv.lead_name || conv.contact_name || formatChat(conv.chat_id) : ''}</strong>
-                  {conv && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                      {formatChat(conv.chat_id)} · {conv.assigned_user_id ? `Responsable: ${userMap[conv.assigned_user_id]?.name ?? ''}` : 'Sin responsable'}
-                      {conv.no_reply_by && (
-                        <>
-                          {' · '}
-                          <span title={new Date(conv.no_reply_at).toLocaleString('es-CO')}>
-                            Marcada sin respuesta por {userMap[conv.no_reply_by]?.name ?? 'un usuario'}
-                          </span>{' '}
-                          <button type="button" className="link-btn" onClick={() => markNoReply(conv, false)}>
-                            Deshacer
-                          </button>
-                        </>
+              {conv && (
+                <header className="wa-head">
+                  <div className="wa-head-main">
+                    <span className="wa-avatar">{initials(nameOf(conv))}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <h2>{nameOf(conv)}</h2>
+                      <div className="wa-head-sub">
+                        Cliente · WhatsApp · {formatChat(conv.chat_id)}
+                      </div>
+                    </div>
+                    <div className="wa-head-actions">
+                      <button className="btn btn-secondary" onClick={() => toggleReadLater(conv)} title={conv.read_later ? 'Quitar la marca' : 'Se marca y se cierra; la verás arriba en la lista'}>
+                        <IconText name="bookmark" size={15}>{conv.read_later ? 'Quitar de más tarde' : 'Leer más tarde'}</IconText>
+                      </button>
+                      {conv.needs_reply ? (
+                        <button className="btn btn-secondary" onClick={() => markNoReply(conv, true)} title="Marca la conversación como resuelta: no necesita respuesta (queda registrado quién lo hizo)">
+                          <IconText name="check" size={15}>Resolver</IconText>
+                        </button>
+                      ) : conv.no_reply_by ? (
+                        <button className="btn btn-secondary" onClick={() => markNoReply(conv, false)} title="Vuelve a dejarla pendiente">
+                          <IconText name="rotate-ccw" size={15}>Reabrir</IconText>
+                        </button>
+                      ) : null}
+                      {!showPanel && mode !== 'wazzup' && (
+                        <button className="wa-icon-btn" onClick={() => setPanel(true)} title="Ver ficha del cliente">
+                          <Icon name="id-card" size={17} />
+                        </button>
                       )}
                     </div>
-                  )}
-                </div>
-                {conv?.needs_reply && (
-                  <button className="btn btn-secondary" onClick={() => markNoReply(conv, true)} title="Quita la marca de 'Necesita respuesta' (queda registrado quién lo hizo)">
-                    <IconText name="check" size={15}>No necesita respuesta</IconText>
-                  </button>
-                )}
-                {conv && (
-                  <button className="btn btn-secondary" onClick={() => toggleReadLater(conv)} title={conv.read_later ? 'Quitar la marca' : 'Se marca y se cierra; la verás arriba en la lista'}>
-                    <IconText name="bookmark" size={15}>{conv.read_later ? 'Quitar de más tarde' : 'Leer más tarde'}</IconText>
-                  </button>
-                )}
-                {conv?.lead_id && (
-                  <a className="btn btn-secondary" href={`/leads/${conv.lead_id}`}>
-                    Ver lead
-                  </a>
-                )}
-              </div>
+                  </div>
+                  <div className="wa-head-row">
+                    <span className="wa-owner">
+                      <Icon name="user" size={14} />
+                      Responsable:{' '}
+                      {conv.lead_id && can('leads.assign') ? (
+                        <select value={conv.assigned_user_id || ''} onChange={(e) => assign(conv, e.target.value)} aria-label="Responsable">
+                          <option value="">Sin asignar</option>
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <strong>{conv.assigned_user_id ? userMap[conv.assigned_user_id]?.name ?? '' : 'Sin asignar'}</strong>
+                      )}
+                    </span>
+                    <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {conv.no_reply_by && (
+                        <span className="wa-head-sub" title={new Date(conv.no_reply_at).toLocaleString('es-CO')}>
+                          Resuelta por {userMap[conv.no_reply_by]?.name ?? 'un usuario'}
+                        </span>
+                      )}
+                      <span className={`wa-status ${statusOf(conv).key}`}>{statusOf(conv).label}</span>
+                      {conv.lead_id && (
+                        <a className="wa-link" href={`/leads/${conv.lead_id}`}>
+                          Ver lead <Icon name="arrow-right" size={13} />
+                        </a>
+                      )}
+                    </span>
+                  </div>
+                </header>
+              )}
               <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                 {mode === 'wazzup' ? (
                   <WazzupFrame conversationId={selected} />
                 ) : (
-                  <WaThread conversationId={selected} orgId={profile.organization_id} userMap={userMap} canSend={can('whatsapp.send')} />
+                  <WaThread
+                    conversationId={selected}
+                    orgId={profile.organization_id}
+                    userMap={userMap}
+                    canSend={can('whatsapp.send')}
+                    leadId={conv?.lead_id ?? null}
+                    contactName={conv ? nameOf(conv) : 'Cliente'}
+                    showClientBar={false}
+                  />
                 )}
               </div>
             </>
           )}
-        </div>
+        </section>
+
+        {/* ---------------- Ficha del cliente */}
+        {showPanel && <WaClientPanel conv={conv} onClose={() => setPanel(false)} />}
       </div>
     </main>
   );
