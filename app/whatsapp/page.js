@@ -171,7 +171,9 @@ function Inbox() {
   function exit() {
     let back = '/dashboard';
     try {
-      back = sessionStorage.getItem('xiris.lastPath') || back;
+      const saved = sessionStorage.getItem('xiris.lastPath');
+      // Nunca volver a una pantalla completa (evita que la X "no haga nada")
+      if (saved && !/^\/(comunicacion|whatsapp)(\/|\?|$)/.test(saved)) back = saved;
     } catch {}
     router.push(back);
   }

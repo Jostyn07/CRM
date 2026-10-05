@@ -1970,13 +1970,13 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 .calls-dl dd select.input { height: 34px; padding: 0 8px; font-size: 0.82rem; min-width: 160px; }
 
 /* ===== Comunicación interna (pantalla completa) ===== */
-.cm-page { min-height: 100vh; background: var(--color-bg); display: flex; flex-direction: column; }
+.cm-page { height: 100vh; height: 100dvh; overflow: hidden; background: var(--color-bg); display: flex; flex-direction: column; }
 .cm-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding: 1.4rem 1.6rem 1rem; }
 .cm-head h1 { font-size: 1.6rem; margin: 0; }
 .cm-head p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 0.9rem; }
 .cm-btn-gold { background: linear-gradient(135deg,#e8c77e,#c99a3d); color: #171411; border: none; font-weight: 600; }
 .cm-btn-gold:hover { filter: brightness(1.05); }
-.cm-layout { flex: 1; display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 0 1.6rem 1.4rem; min-height: 0; height: calc(100vh - 160px); }
+.cm-layout { flex: 1; display: grid; grid-template-columns: 340px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 0 1.6rem 1.4rem; min-height: 0; }
 .cm-list, .cm-thread { padding: 0 !important; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; border-radius: 16px; }
 .cm-list-top { padding: 1rem 1rem 0; position: relative; border-bottom: 1px solid var(--color-border); }
 .cm-list-title { display: block; font-size: 1rem; margin-bottom: 10px; }
@@ -2009,7 +2009,8 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 .cm-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); cursor: pointer; }
 .cm-chip:hover { border-color: #c99a3d; }
 @media (max-width: 860px) {
-  .cm-layout { grid-template-columns: 1fr; height: auto; }
+  .cm-page { height: auto; overflow: visible; }
+  .cm-layout { grid-template-columns: 1fr; grid-template-rows: auto; }
   .cm-list { max-height: 50vh; }
   .cm-thread { height: 75vh; }
 }
