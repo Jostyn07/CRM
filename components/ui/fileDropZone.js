@@ -9,7 +9,7 @@ import Icon from './icon';
 
 const tieneArchivos = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
 
-export default function FileDropZone({ onFiles, disabled, hint, children, style }) {
+export default function FileDropZone({ onFiles, disabled, hint, children, style, className }) {
   const [over, setOver] = useState(false);
   const depth = useRef(0); // evita parpadeo al pasar sobre elementos internos
 
@@ -43,7 +43,7 @@ export default function FileDropZone({ onFiles, disabled, hint, children, style 
       };
 
   return (
-    <div {...handlers} style={{ position: 'relative', ...style }}>
+    <div {...handlers} className={className} style={{ position: 'relative', ...style }}>
       {children}
       {over && (
         <div className="file-drop-overlay" aria-hidden="true">

@@ -12,7 +12,7 @@ export default function AppShell({ children }) {
   const pathname = usePathname();
   const { user } = useSession();
   // Pantallas a pantalla completa (sin menú ni barra superior)
-  const fullScreen = pathname?.startsWith('/whatsapp');
+  const fullScreen = pathname?.startsWith('/whatsapp') || pathname?.startsWith('/comunicacion');
   const hideSidebar = NO_SIDEBAR.includes(pathname) || fullScreen || !user;
 
   // Última página visitada fuera de WhatsApp (para el botón "Salir")

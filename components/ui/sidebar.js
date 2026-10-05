@@ -118,7 +118,7 @@ export default function Sidebar() {
   }
 
   // WhatsApp se abre a pantalla completa (tiene su propia barra superior)
-  if (HIDDEN_ON.includes(pathname) || pathname?.startsWith('/whatsapp') || !user) return null;
+  if (HIDDEN_ON.includes(pathname) || pathname?.startsWith('/whatsapp') || pathname?.startsWith('/comunicacion') || !user) return null;
 
   const displayName = profile?.full_name || user.email || 'Cuenta';
   const orgName = organization?.name ?? (isPlatformOwner ? 'Platform Owner' : 'Xiris');

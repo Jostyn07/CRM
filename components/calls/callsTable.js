@@ -3,6 +3,7 @@
 // Tabla de llamadas: estado, resultado editable, duración y grabación.
 // La usan la pantalla de Llamadas y la pestaña Llamadas del lead.
 
+import Icon, { IconText } from '../ui/icon';
 import { useState } from 'react';
 import { useSession } from '../../lib/auth/sessionContext';
 import { RESULTS, TECHNICAL_STATUS, fmtDuration, getRecordingUrl, setCallResult } from '../../lib/calls/api';
@@ -85,7 +86,7 @@ export default function CallsTable({ rows, users = {}, showLead = true, showUser
                         <span>Externa</span>
                       )}
                       <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)' }}>
-                        {r.direction === 'inbound' ? '📥 ' : '📤 '}
+                        <Icon name={r.direction === 'inbound' ? 'phone-incoming' : 'phone-outgoing'} size={14} style={{ marginRight: 4 }} />
                         {r.direction === 'inbound' ? r.from_e164 : r.to_e164}
                         {r.provider === '3cx' ? ` · 3CX${r.pbx_extension ? ` ext ${r.pbx_extension}` : ''}` : ''}
                       </div>
@@ -140,7 +141,7 @@ export default function CallsTable({ rows, users = {}, showLead = true, showUser
 }
 
 // Transcripción y resumen con IA (a pedido)
-function Transcript({ callId }) {
+export function Transcript({ callId }) {
   const [state, setState] = useState(null); // { loading, data, error, open }
 
   async function open() {
@@ -160,7 +161,7 @@ function Transcript({ callId }) {
   return (
     <div style={{ marginTop: 6, maxWidth: 360 }}>
       <button className="btn btn-secondary" style={{ height: 28, fontSize: '0.78rem' }} disabled={state?.loading} onClick={open}>
-        {state?.loading ? 'Transcribiendo…' : state?.data ? (state.open ? 'Ocultar transcripción' : '📝 Ver transcripción') : '📝 Transcribir con IA'}
+        {state?.loading ? 'Transcribiendo…' : state?.data ? (state.open ? 'Ocultar transcripción' : <IconText name="file-text" size={16}>Ver transcripción</IconText>) : <IconText name="file-text" size={16}>Transcribir con IA</IconText>}
       </button>
       {state?.error && <div style={{ color: 'var(--color-danger)', fontSize: '0.76rem', marginTop: 4 }}>{state.error}</div>}
       {state?.open && state.data && (

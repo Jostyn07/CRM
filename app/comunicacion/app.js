@@ -71,6 +71,8 @@ export default function ComunicacionApp() {
   const [members, setMembers] = useState([]); // [{user_id, joined_at}]
   const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState('');
+  const [tab, setTab] = useState('chats');
+  const searchRef = useRef(null);
   const [error, setError] = useState(null);
   const [editId, setEditId] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
@@ -491,94 +493,129 @@ export default function ComunicacionApp() {
   let lastDay = null;
   let lastSender = null;
 
+  const initials = (n) =>
+    String(n || '')
+      .replace(/[^\p{L}\s]/gu, ' ')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase())
+      .join('') || '?';
+  const exit = () => {
+    let back = '/dashboard';
+    try {
+      back = sessionStorage.getItem('xiris.lastPath') || back;
+    } catch {}
+    router.push(back);
+  };
+  const tabCount = {
+    chats: (conversations ?? []).filter((c) => c.kind !== 'group').length,
+    groups: (conversations ?? []).filter((c) => c.kind === 'group').length,
+    saved: (conversations ?? []).filter((c) => c.read_later).length,
+  };
+  const visibles = (conversations ?? []).filter((c) =>
+    tab === 'groups' ? c.kind === 'group' : tab === 'saved' ? c.read_later : c.kind !== 'group'
+  );
+
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 1200, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: 8, flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: '1.3rem' }}>Comunicación interna</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+    <main className="cm-page">
+      <header className="wa-topbar">
+        <div className="wa-topbar-brand">
+          <span className="wa-topbar-logo">
+            <Icon name="message-square" size={18} />
+          </span>
+          <strong>Comunicación interna</strong>
+          <span className="wa-topbar-sep" />
+          <span className="wa-topbar-sub">Equipo</span>
+        </div>
+        <div className="wa-page-tools">
           <SoundToggle />
           {notifPerm === 'default' && (
             <button className="btn btn-secondary" onClick={enableNotifications}>
               <IconText name="bell" size={16}>Activar avisos</IconText>
             </button>
           )}
-          <button className="btn btn-primary" onClick={() => setNewGroup(true)}>
+          <span className="wa-topbar-avatar" title={profile.full_name || ''}>
+            {initials(profile.full_name)}
+          </span>
+          <button type="button" className="wa-topbar-close" onClick={exit} title="Salir de Comunicación interna" aria-label="Salir">
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+      </header>
+
+      <div className="cm-head">
+        <div>
+          <h1>Comunicación interna</h1>
+          <p>Un espacio para conversar, compartir y trabajar en equipo.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => setNewGroup(true)}>
             <IconText name="users" size={16}>Nuevo grupo</IconText>
+          </button>
+          <button className="btn cm-btn-gold" onClick={() => searchRef.current?.focus()}>
+            <IconText name="plus" size={16}>Nuevo chat</IconText>
           </button>
         </div>
       </div>
 
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', height: '74vh', padding: 0, overflow: 'hidden' }}>
+      <div className="cm-layout">
         {/* Lista */}
-        <div style={{ borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--color-border)', position: 'relative' }}>
-            <input className="input" placeholder="Buscar compañero para escribirle…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <section className="card cm-list">
+          <div className="cm-list-top">
+            <strong className="cm-list-title">Conversaciones</strong>
+            <div className="cm-search">
+              <Icon name="search" size={16} />
+              <input ref={searchRef} placeholder="Buscar compañero para escribirle…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
             {results.length > 0 && (
-              <div className="card" style={{ position: 'absolute', left: 12, right: 12, top: '100%', zIndex: 5, padding: 4, marginTop: 4 }}>
+              <div className="card cm-results">
                 {results.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => startWith(u.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '0.45rem', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', textAlign: 'left', borderRadius: 'var(--radius)' }}
-                  >
+                  <button key={u.id} onClick={() => startWith(u.id)} className="cm-result">
                     <Avatar name={u.name} size={26} />
-                    <span style={{ fontSize: '0.85rem' }}>{u.name}</span>
+                    <span>{u.name}</span>
                   </button>
                 ))}
               </div>
             )}
-            {q && results.length === 0 && <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 6 }}>Sin resultados.</p>}
+            {q && results.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
+            <div className="cm-tabs" role="tablist">
+              {[
+                ['chats', 'Chats'],
+                ['groups', 'Grupos'],
+                ['saved', 'Guardados'],
+              ].map(([k, l]) => (
+                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>
+                  {l}
+                  <span>{tabCount[k]}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="cm-items">
             {!conversations ? (
-              <p style={{ padding: '1rem', fontSize: '0.85rem' }}>Cargando…</p>
-            ) : conversations.length === 0 ? (
-              <p style={{ padding: '1rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-                Busca a un compañero arriba o crea un grupo para empezar.
+              <p className="cm-muted" style={{ padding: '1rem' }}>Cargando…</p>
+            ) : visibles.length === 0 ? (
+              <p className="cm-muted" style={{ padding: '1rem' }}>
+                {tab === 'saved' ? 'No tienes conversaciones guardadas para leer más tarde.' : tab === 'groups' ? 'Aún no perteneces a ningún grupo.' : 'Busca a un compañero arriba o crea un grupo para empezar.'}
               </p>
             ) : (
-              conversations.map((c) => {
+              visibles.map((c) => {
                 const name = nameOf(c);
                 const active = c.conversation_id === selectedId;
                 const unread = Number(c.unread) || 0;
                 const who = c.last_sender_id === me ? 'Tú: ' : c.kind === 'group' && c.last_sender_id ? `${(userMap[c.last_sender_id]?.name ?? '').split(' ')[0]}: ` : '';
                 return (
-                  <button
-                    key={c.conversation_id}
-                    onClick={() => openConversation(c.conversation_id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      width: '100%',
-                      padding: '0.65rem 0.75rem',
-                      background: active ? 'var(--color-active-bg)' : 'transparent',
-                      border: 'none',
-                      borderBottom: '1px solid var(--color-border)',
-                      textAlign: 'left',
-                      color: 'var(--color-text)',
-                      cursor: 'pointer',
-                    }}
-                  >
+                  <button key={c.conversation_id} onClick={() => openConversation(c.conversation_id)} className={`cm-item${active ? ' active' : ''}${unread ? ' unread' : ''}`}>
                     <Avatar name={name} group={c.kind === 'group'} icon={iconOf(c)} />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                        <span style={{ fontWeight: unread ? 700 : 500, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>{fechaCorta(c.last_message_at)}</span>
+                    <div className="cm-item-body">
+                      <div className="cm-item-row">
+                        <span className="cm-item-name">{name}</span>
+                        <span className="cm-item-time">{fechaCorta(c.last_message_at)}</span>
                       </div>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <span
-                          style={{
-                            flex: 1,
-                            fontSize: '0.78rem',
-                            color: unread ? 'var(--color-text)' : 'var(--color-text-muted)',
-                            fontWeight: unread ? 600 : 400,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
+                      <div className="cm-item-row">
+                        <span className="cm-item-prev">
                           {c.kind === 'notes' && !c.last_message_preview ? 'Solo tú puedes ver tus notas' : (
                             <>
                               {c.kind === 'notes' ? '' : who}
@@ -586,36 +623,31 @@ export default function ComunicacionApp() {
                             </>
                           )}
                         </span>
-                        {c.needs_reply && (
-                          <span className="needs-reply-badge" title="Te escribió y aún no le contestas">
-                            <Icon name="reply" size={11} /> Responder
-                          </span>
-                        )}
-                        {c.read_later && (
-                          <span title="Leer más tarde" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>
-                            <Icon name="bookmark" size={12} /> Más tarde
-                          </span>
-                        )}
-                        {unread > 0 && (
-                          <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, background: 'var(--color-primary)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {unread}
-                          </span>
-                        )}
+                        {c.read_later && <Icon name="bookmark" size={13} style={{ color: '#c99a3d', flexShrink: 0 }} title="Leer más tarde" />}
+                        {unread > 0 && <span className="cm-unread">{unread}</span>}
                       </div>
+                      {c.needs_reply && (
+                        <span className="cm-pending" title="Te escribió y aún no le contestas">
+                          <Icon name="clock" size={12} /> Pendiente de respuesta
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
               })
             )}
           </div>
-        </div>
+          <footer className="cm-list-foot">
+            <Icon name="arrow-up-down" size={13} /> Ordenadas por actividad reciente
+          </footer>
+        </section>
 
         {/* Hilo (se pueden soltar archivos en cualquier parte) */}
         <FileDropZone
           disabled={!selectedId}
           hint="Máximo 50 MB por archivo"
           onFiles={(files) => setDropped({ files, n: Date.now() })}
-          style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}
+          className="card cm-thread"
         >
           {!selectedId ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem', padding: '1rem', textAlign: 'center' }}>
@@ -623,10 +655,11 @@ export default function ComunicacionApp() {
             </div>
           ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.7rem 1rem', borderBottom: '1px solid var(--color-border)' }}>
-                {title && <Avatar name={title} size={32} group={isGroup} icon={iconOf(conv)} />}
+              <div className="cm-thread-head">
+                {title && <Avatar name={title} size={40} group={isGroup} icon={iconOf(conv)} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <strong style={{ fontSize: '0.95rem' }}>{title}</strong>
+                  <strong style={{ fontSize: '1rem' }}>{title}</strong>
+                  {!isGroup && !isNotes && <div className="cm-muted">Conversación interna</div>}
                   {isGroup && (
                     <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
                       {conv.member_count} miembros{conv.system_key ? ' · grupo automático' : ''}
@@ -639,12 +672,12 @@ export default function ComunicacionApp() {
                   )}
                 </div>
                 {isGroup && (
-                  <button className="btn btn-secondary" onClick={() => setGroupInfo(true)}>
+                  <button className="cm-chip" onClick={() => setGroupInfo(true)}>
                     Info del grupo
                   </button>
                 )}
                 {conv?.needs_reply && (
-                  <button className="btn btn-secondary" onClick={() => handleNoReply(conv, true)} title="Quita la marca de pendiente por responder">
+                  <button className="cm-chip" onClick={() => handleNoReply(conv, true)} title="Quita la marca de pendiente por responder">
                     <IconText name="check" size={15}>No necesita respuesta</IconText>
                   </button>
                 )}
@@ -730,12 +763,15 @@ export default function ComunicacionApp() {
               <Composer orgId={orgId} userId={me} userMap={userMap} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={handleSend} droppedFiles={dropped} />
             </>
           )}
+          <footer className="cm-thread-foot">
+            <Icon name="info" size={13} />
+            <span>
+              Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y
+              editarlos durante {EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.
+            </span>
+          </footer>
         </FileDropZone>
       </div>
-      <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 8 }}>
-        Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos
-        durante {EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.
-      </p>
 
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', color: '#fff', padding: '8px 16px', borderRadius: 999, fontSize: '0.85rem', zIndex: 60 }}>
