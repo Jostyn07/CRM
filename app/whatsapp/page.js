@@ -57,14 +57,21 @@ function Inbox() {
 
   useEffect(() => {
     load();
+    // Muchos cambios seguidos = una sola recarga de la bandeja
+    let timer;
+    const later = () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 1200);
+    };
     const ch = supabase
       .channel(`wa-inbox-${user?.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wa_conversations' }, load)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wa_conversations' }, later)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' }, later)
       .subscribe();
     const onRead = () => load();
     window.addEventListener('wa:read', onRead);
     return () => {
+      clearTimeout(timer);
       supabase.removeChannel(ch);
       window.removeEventListener('wa:read', onRead);
     };

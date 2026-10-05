@@ -58,9 +58,15 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
   const taRef = useRef(null);
   const stick = useRef(true);
 
+  // Conversación abierta en este momento: evita que una respuesta lenta de
+  // otra conversación se pinte aquí (mezcla de mensajes al cambiar rápido)
+  const current = useRef(conversationId);
+  current.current = conversationId;
+
   const load = useCallback(async () => {
     try {
       const msgs = await getMessages(conversationId);
+      if (current.current !== conversationId) return;
       setMessages(msgs);
       setHasMore(msgs.length === 60);
       await markRead(conversationId);
@@ -82,7 +88,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
         { event: '*', schema: 'public', table: 'wa_messages', filter: `conversation_id=eq.${conversationId}` },
         (p) => {
           const m = p.new;
-          if (!m?.id) return;
+          if (!m?.id || m.conversation_id !== conversationId || current.current !== conversationId) return;
           setMessages((prev) => {
             const list = prev ?? [];
             const i = list.findIndex((x) => x.id === m.id);
@@ -107,7 +113,9 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
 
   async function older() {
     stick.current = false;
-    const o = await getMessages(conversationId, { before: messages[0].created_at });
+    const id = conversationId;
+    const o = await getMessages(id, { before: messages[0].created_at });
+    if (current.current !== id) return;
     setHasMore(o.length === 60);
     setMessages((prev) => [...o, ...prev]);
   }

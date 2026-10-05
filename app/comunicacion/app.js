@@ -145,7 +145,8 @@ export default function ComunicacionApp() {
 
   const loadMembers = useCallback(async (id) => {
     try {
-      setMembers(await groupMembers(id));
+      const list = await groupMembers(id);
+      if (window.__chatOpenConversation === id) setMembers(list);
     } catch {
       setMembers([]);
     }
@@ -178,6 +179,8 @@ export default function ComunicacionApp() {
       try {
         const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
         const msgs = await getMessages(id, { after: clearedAt || undefined });
+        // Si mientras cargaba se abrió otro chat, esta respuesta se descarta
+        if (window.__chatOpenConversation !== id) return;
         setMessages(msgs);
         setHasMore(msgs.hasMore);
         loadReactions(msgs.map((m) => m.id));
@@ -302,7 +305,9 @@ export default function ComunicacionApp() {
     const prevHeight = el ? el.scrollHeight : 0;
     try {
       const clearedAt = convsRef.current.find((x) => x.conversation_id === selectedId)?.cleared_at;
-      const older = await getMessages(selectedId, { before: messages[0].created_at, after: clearedAt || undefined });
+      const id = selectedId;
+      const older = await getMessages(id, { before: messages[0].created_at, after: clearedAt || undefined });
+      if (window.__chatOpenConversation !== id) return;
       setHasMore(older.hasMore);
       setMessages((prev) => [...older.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
       loadReactions(older.map((m) => m.id));
@@ -320,6 +325,8 @@ export default function ComunicacionApp() {
   }
 
   const addLocal = (m) => {
+    // Un envío lento no debe aparecer en otro chat que se abrió después
+    if (m?.conversation_id && m.conversation_id !== window.__chatOpenConversation) return;
     stickToBottom.current = true;
     setReads((prev) => (m.id in prev ? prev : { ...prev, [m.id]: [] }));
     setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
