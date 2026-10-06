@@ -10,7 +10,7 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '../../lib/auth/sessionContext';
 import { SHORTCUTS, applyAccent, applyBackground, saveMyPrefs, useMyPrefs } from '../../lib/me/workspace';
-import { logAccess, mfaNeedsCode, sessionAlive } from '../../lib/me/access';
+import * as access from '../../lib/me/access';
 import { signOut } from '../../lib/supabase/auth';
 
 const IDLE_MS = 15 * 60 * 1000;
@@ -27,11 +27,19 @@ export default function WorkspaceEffects() {
   useEffect(() => {
     if (!user) return undefined;
     let vivo = true;
-    logAccess();
-    mfaNeedsCode().then((need) => vivo && need && router.replace('/login?mfa=1'));
+    // Protegido: si algo falla aquí, la plataforma sigue funcionando
+    const safe = (fn, ...a) => {
+      try {
+        return typeof fn === 'function' ? Promise.resolve(fn(...a)).catch(() => null) : Promise.resolve(null);
+      } catch {
+        return Promise.resolve(null);
+      }
+    };
+    safe(access.logAccess);
+    safe(access.mfaNeedsCode).then((need) => vivo && need === true && router.replace('/login?mfa=1'));
     const t = setInterval(async () => {
-      logAccess();
-      if (!(await sessionAlive()) && vivo) {
+      safe(access.logAccess);
+      if ((await safe(access.sessionAlive)) === false && vivo) {
         try {
           await signOut();
         } catch {}
