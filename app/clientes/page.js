@@ -12,7 +12,10 @@ import ClientCard from '../../components/clients/clientCard';
 import { useSession } from '../../lib/auth/sessionContext';
 import { trackEvent } from '../../lib/activity/tracker';
 import { relTime } from '../../lib/leads/format';
-import { listClients, listPortals, saveSource, setPortalBranch, sourceStatus, syncNow } from '../../lib/clients/api';
+import { createLeadFromClient, listClients, listPortals, saveSource, setPortalBranch, sourceStatus, syncNow } from '../../lib/clients/api';
+import CardMenu from '../../components/ui/cardMenu';
+import { useCalls } from '../../lib/calls/callContext';
+import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase/client';
 import Icon, { IconText } from '../../components/ui/icon';
 
@@ -35,7 +38,40 @@ export default function ClientsPage() {
 }
 
 function Clients() {
-  const { can } = useSession();
+  const { can, activeBranchId } = useSession();
+  const router = useRouter();
+  const { openDialer } = useCalls();
+  const [busyId, setBusyId] = useState(null);
+
+  // Lead del cliente: el que ya existe o uno nuevo creado en el momento
+  // (sin lead no hay dónde guardar tareas ni el chat de WhatsApp)
+  async function ensureLead(c) {
+    if (c.lead_ids?.length) return c.lead_ids[0];
+    setBusyId(c.id);
+    try {
+      const r = await createLeadFromClient(c.id, activeBranchId);
+      const id = r?.lead_id ?? r?.matches?.[0]?.id ?? r?.matches?.[0]?.lead_id;
+      if (!id) throw new Error('No se pudo preparar el cliente para esta acción.');
+      trackEvent('clients.lead_created', { entityType: 'leads', entityId: id });
+      return id;
+    } catch (e) {
+      window.alert(e.message || 'No se pudo preparar el cliente para esta acción.');
+      return null;
+    } finally {
+      setBusyId(null);
+    }
+  }
+  async function goLead(c, tab) {
+    const id = await ensureLead(c);
+    if (id) router.push(`/leads/${id}${tab ? `?tab=${tab}` : ''}`);
+  }
+  const clientActions = (c) =>
+    [
+      { label: c.lead_ids?.length ? 'Abrir lead' : 'Abrir como lead', onClick: () => goLead(c, 'cliente') },
+      c.phones?.[0] && { label: 'Llamar', onClick: () => openDialer({ to: c.phones[0], leadId: c.lead_ids?.[0], leadName: c.full_name }) },
+      c.phones?.[0] && { label: 'WhatsApp', onClick: () => goLead(c, 'whatsapp') },
+      { label: 'Tareas', onClick: () => goLead(c, 'tareas') },
+    ].filter(Boolean);
   const [status, setStatus] = useState(null);
   const [rows, setRows] = useState(null);
   const [total, setTotal] = useState(0);
@@ -216,19 +252,20 @@ function Clients() {
               {portals.length > 0 && <th style={{ padding: '0.55rem 0.7rem' }}>Portal</th>}
               <th style={{ padding: '0.55rem 0.7rem' }}>Operador</th>
               <th style={{ padding: '0.55rem 0.7rem' }}>En la plataforma</th>
+              <th style={{ padding: '0.55rem 0.7rem', textAlign: 'right' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {rows === null && (
               <tr>
-                <td colSpan={7} style={{ padding: '1.2rem', textAlign: 'center' }}>
+                <td colSpan={8} style={{ padding: '1.2rem', textAlign: 'center' }}>
                   Cargando…
                 </td>
               </tr>
             )}
             {rows?.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                <td colSpan={8} style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                   No hay clientes con ese filtro.
                 </td>
               </tr>
@@ -262,6 +299,9 @@ function Clients() {
                   ) : (
                     <span style={{ color: '#d97706' }}>No está</span>
                   )}
+                </td>
+                <td style={{ padding: '0.5rem 0.7rem', textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                  {busyId === c.id ? <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Abriendo…</span> : <CardMenu items={clientActions(c)} />}
                 </td>
               </tr>
             ))}
