@@ -1986,7 +1986,7 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 .cm-result { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0.45rem; background: none; border: none; color: var(--color-text); cursor: pointer; text-align: left; border-radius: 8px; font-size: 0.85rem; }
 .cm-result:hover { background: var(--color-active-bg); }
 .cm-tabs { display: flex; gap: 4px; margin-top: 12px; }
-.cm-tabs button { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 4px; cursor: pointer; color: var(--color-text-muted); font-size: 0.85rem; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; justify-content: center; }
+.cm-tabs button { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 2px; white-space: nowrap; cursor: pointer; color: var(--color-text-muted); font-size: 0.82rem; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; justify-content: center; }
 .cm-tabs button span { font-size: 0.7rem; background: var(--color-active-bg); border-radius: 999px; padding: 1px 7px; }
 .cm-tabs button.active { color: var(--color-text); border-bottom-color: #c99a3d; }
 .cm-tabs button.active span { background: linear-gradient(135deg,#e8c77e,#c99a3d); color: #171411; }

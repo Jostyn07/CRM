@@ -71,7 +71,7 @@ export default function ComunicacionApp() {
   const [members, setMembers] = useState([]); // [{user_id, joined_at}]
   const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState('chats');
+  const [tab, setTab] = useState('all');
   const searchRef = useRef(null);
   const [error, setError] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -513,12 +513,13 @@ export default function ComunicacionApp() {
   // Cada pestaña muestra cuántas conversaciones tienen mensajes sin leer
   const sinLeer = (c) => (Number(c.unread) || 0) > 0;
   const tabCount = {
+    all: (conversations ?? []).filter(sinLeer).length,
     chats: (conversations ?? []).filter((c) => c.kind !== 'group' && sinLeer(c)).length,
     groups: (conversations ?? []).filter((c) => c.kind === 'group' && sinLeer(c)).length,
     saved: (conversations ?? []).filter((c) => c.read_later).length,
   };
   const visibles = (conversations ?? []).filter((c) =>
-    tab === 'groups' ? c.kind === 'group' : tab === 'saved' ? c.read_later : c.kind !== 'group'
+    tab === 'all' ? true : tab === 'groups' ? c.kind === 'group' : tab === 'saved' ? c.read_later : c.kind !== 'group'
   );
 
   return (
@@ -588,6 +589,7 @@ export default function ComunicacionApp() {
             {q && results.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
             <div className="cm-tabs" role="tablist">
               {[
+                ['all', 'Todos'],
                 ['chats', 'Chats'],
                 ['groups', 'Grupos'],
                 ['saved', 'Guardados'],
