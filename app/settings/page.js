@@ -126,7 +126,7 @@ export default function MySpacePage() {
             />
           )}
           {section === 'seguridad' && <SecuritySection user={user} can={can} />}
-          {section === 'perfil' && (can?.('settings.manage', 'organization') || isPlatformOwner) && (
+          {section === 'perfil' && (can?.('org.logo') || can?.('settings.manage', 'organization') || isPlatformOwner) && (
             <div style={{ marginTop: 16 }}>
               <OrgLogoCard />
             </div>
