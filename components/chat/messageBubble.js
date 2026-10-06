@@ -72,6 +72,7 @@ export default function MessageBubble({
   me,
   userMap,
   showSender,
+  avatars,
   replyTo,
   reactions = [],
   readOnly,
@@ -133,7 +134,21 @@ export default function MessageBubble({
       style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}
     >
       {showSender && !mine && (
-        <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)', margin: '0 0 2px 6px' }}>{userMap[m.sender_id]?.name ?? 'Usuario'}</span>
+        <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)', margin: '0 0 3px 2px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {avatars?.[m.sender_id] ? (
+            <img src={avatars[m.sender_id]} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--color-active-bg)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>
+              {(userMap[m.sender_id]?.name ?? 'U')
+                .split(/\s+/)
+                .slice(0, 2)
+                .map((w) => w[0])
+                .join('')
+                .toUpperCase()}
+            </span>
+          )}
+          {userMap[m.sender_id]?.name ?? 'Usuario'}
+        </span>
       )}
 
       <div

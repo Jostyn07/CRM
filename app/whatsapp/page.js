@@ -19,6 +19,7 @@ import { fechaCorta } from '../../lib/chat/api';
 import { formatChat, listChannels, listConversations, setNoReply, setReadLater, useWaMode } from '../../lib/whatsapp/api';
 import SoundToggle from '../../components/ui/soundToggle';
 import WaClientPanel from '../../components/whatsapp/waClientPanel';
+import { useMyPrefs } from '../../lib/me/workspace';
 import { bulkUpdate } from '../../lib/leads/api';
 
 // Filtros de la bandeja
@@ -57,6 +58,7 @@ export default function WhatsappPage() {
 
 function Inbox() {
   const { user, profile, can, scopeOf } = useSession();
+  const myPrefs = useMyPrefs(profile?.organization_id ? user?.id : null);
   const [mode, setMode] = useWaMode();
   const canGlobal = scopeOf('whatsapp.view') === 'organization';
   const { users, userMap } = useOrgUsers();
@@ -216,8 +218,8 @@ function Inbox() {
               ))}
             </select>
           )}
-          <span className="wa-topbar-avatar" title={profile.full_name || ''}>
-            {initials(profile.full_name || user?.email || '')}
+          <span className="wa-topbar-avatar" title={profile.full_name || ''} style={myPrefs?.prefs?.avatar_url ? { overflow: 'hidden', padding: 0 } : undefined}>
+            {myPrefs?.prefs?.avatar_url ? <img src={myPrefs.prefs.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(profile.full_name || user?.email || '')}
           </span>
           <button type="button" className="wa-topbar-close" onClick={exit} title="Salir de WhatsApp" aria-label="Salir de WhatsApp">
             <Icon name="x" size={20} />

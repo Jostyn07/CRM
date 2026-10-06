@@ -5,7 +5,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Modal from '../ui/modal';
-import { addMembers, createGroup, groupMembers, removeMember, renameGroup, setMemberRole } from '../../lib/chat/api';
+import { addMembers, createGroup, groupMembers, removeMember, renameGroup, setGroupPhoto, setMemberRole } from '../../lib/chat/api';
+import { uploadProfileMedia } from '../../lib/me/workspace';
+import Icon from '../ui/icon';
 import { getAvatarColors, getInitials } from '../leads/avatarColor';
 
 function Avatar({ name, size = 28 }) {
@@ -140,6 +142,37 @@ export function GroupInfoDialog({ open, onClose, conversation, users, userMap, m
   return (
     <Modal open={open} onClose={onClose} title="Información del grupo" width={500}>
       <div style={{ display: 'grid', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {conversation.photo_url ? (
+            <img src={conversation.photo_url} alt="" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--color-active-bg)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-primary)' }}>
+              <Icon name="users" size={28} />
+            </span>
+          )}
+          {iAmAdmin && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <label className="btn btn-secondary" style={{ cursor: 'pointer' }}>
+                <Icon name="camera" size={15} /> {conversation.photo_url ? 'Cambiar foto' : 'Poner foto'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) run(async () => setGroupPhoto(convId, await uploadProfileMedia(me, file, `grupo-${convId}`)));
+                  }}
+                />
+              </label>
+              {conversation.photo_url && (
+                <button type="button" className="btn btn-secondary" onClick={() => run(() => setGroupPhoto(convId, null))}>
+                  Quitar foto
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         {iAmAdmin ? (
           <div style={{ display: 'flex', gap: 8 }}>
             <input className="input" value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} />
@@ -235,6 +268,14 @@ export function GroupInfoDialog({ open, onClose, conversation, users, userMap, m
 
         {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>{error}</p>}
 
+        {conversation?.system_key && (
+          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', margin: 0 }}>
+            {conversation.system_key === 'org'
+              ? 'Grupo automático de toda la organización: cada usuario nuevo entra solo.'
+              : 'Grupo automático de la sucursal: entran y salen solos según las sucursales de cada usuario.'}
+          </p>
+        )}
+        {!conversation?.system_key && (
         <button
           type="button"
           className="btn btn-secondary"
@@ -251,6 +292,7 @@ export function GroupInfoDialog({ open, onClose, conversation, users, userMap, m
         >
           Salir del grupo
         </button>
+        )}
       </div>
     </Modal>
   );

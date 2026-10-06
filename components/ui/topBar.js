@@ -11,11 +11,13 @@ import { signOut } from '../../lib/supabase/auth';
 import NotificationsBell from './notificationsBell';
 import Icon from './icon';
 import Avatar from './avatar';
+import { useMyPrefs } from '../../lib/me/workspace';
 import { toggleSidebar } from './sidebar';
 
 export default function TopBar() {
   const router = useRouter();
   const { user, profile, organization, activeBranch, branches, isPlatformOwner } = useSession();
+  const myPrefs = useMyPrefs(profile?.organization_id ? user?.id : null);
   const { resolvedTheme, toggleTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -28,6 +30,7 @@ export default function TopBar() {
 
   if (!user) return null;
   const name = profile?.full_name || user.email;
+  const avatarUrl = myPrefs?.prefs?.avatar_url || undefined;
   const where = organization?.name ?? (isPlatformOwner ? 'Platform Owner' : '');
   const branch = activeBranch?.name ?? (branches.length === 1 ? branches[0].name : null);
 
@@ -42,7 +45,7 @@ export default function TopBar() {
       </button>
       <div ref={ref} style={{ position: 'relative', marginLeft: 6 }}>
         <button className="topbar-user" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}>
-          <Avatar name={name} size={40} gold />
+          <Avatar name={name} src={avatarUrl} size={40} gold />
           <span className="topbar-user-text" style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 650, fontSize: '0.92rem', whiteSpace: 'nowrap' }}>{name}</div>
             <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{branch ? `${where} · ${branch}` : where}</div>

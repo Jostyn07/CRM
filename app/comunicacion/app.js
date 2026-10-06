@@ -27,9 +27,13 @@ import SoundToggle from '../../components/ui/soundToggle';
 import CardMenu from '../../components/ui/cardMenu';
 import FileDropZone from '../../components/ui/fileDropZone';
 import ImageViewer from '../../components/chat/imageViewer';
+import { useTeamAvatars } from '../../lib/me/workspace';
 
-function Avatar({ name, size = 34, group, icon }) {
+function Avatar({ name, size = 34, group, icon, src }) {
   const c = getAvatarColors(name);
+  if (src) {
+    return <img src={src} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block' }} />;
+  }
   return (
     <div
       style={{
@@ -57,6 +61,7 @@ export default function ComunicacionApp() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const me = user?.id;
+  const avatars = useTeamAvatars(!!me);
   const orgId = profile?.organization_id;
 
   const [conversations, setConversations] = useState(null);
@@ -479,6 +484,7 @@ export default function ComunicacionApp() {
   const title = isNotes ? 'Notas' : isGroup ? conv.title : userMap[otherId]?.name ?? (otherId ? 'Usuario' : '');
   const nameOf = (c) => (c.kind === 'notes' ? 'Notas' : c.kind === 'group' ? c.title : userMap[c.other_user_id]?.name ?? 'Usuario');
   // Ícono: Notas, grupo General, grupo de sucursal
+  const photoOf = (c) => (c?.kind === 'group' ? c.photo_url || null : c?.kind === 'direct' ? avatars[c.other_user_id] || null : null);
   const iconOf = (c) => (c?.kind === 'notes' ? 'notebook-pen' : c?.system_key === 'org' ? 'building-2' : c?.system_key ? 'map-pin' : null);
 
   const q = search.trim().toLowerCase();
@@ -543,8 +549,8 @@ export default function ComunicacionApp() {
               <IconText name="bell" size={16}>Activar avisos</IconText>
             </button>
           )}
-          <span className="wa-topbar-avatar" title={profile.full_name || ''}>
-            {initials(profile.full_name)}
+          <span className="wa-topbar-avatar" title={profile.full_name || ''} style={avatars[me] ? { overflow: 'hidden', padding: 0 } : undefined}>
+            {avatars[me] ? <img src={avatars[me]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(profile.full_name)}
           </span>
           <button type="button" className="wa-topbar-close" onClick={exit} title="Salir de Comunicación interna" aria-label="Salir">
             <Icon name="x" size={20} />
@@ -580,7 +586,7 @@ export default function ComunicacionApp() {
               <div className="card cm-results">
                 {results.map((u) => (
                   <button key={u.id} onClick={() => startWith(u.id)} className="cm-result">
-                    <Avatar name={u.name} size={26} />
+                    <Avatar name={u.name} size={26} src={avatars[u.id]} />
                     <span>{u.name}</span>
                   </button>
                 ))}
@@ -617,7 +623,7 @@ export default function ComunicacionApp() {
                 const who = c.last_sender_id === me ? 'Tú: ' : c.kind === 'group' && c.last_sender_id ? `${(userMap[c.last_sender_id]?.name ?? '').split(' ')[0]}: ` : '';
                 return (
                   <button key={c.conversation_id} onClick={() => openConversation(c.conversation_id)} className={`cm-item${active ? ' active' : ''}${unread ? ' unread' : ''}`}>
-                    <Avatar name={name} group={c.kind === 'group'} icon={iconOf(c)} />
+                    <Avatar name={name} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
                     <div className="cm-item-body">
                       <div className="cm-item-row">
                         <span className="cm-item-name">
@@ -663,7 +669,7 @@ export default function ComunicacionApp() {
           ) : (
             <>
               <div className="cm-thread-head">
-                {title && <Avatar name={title} size={40} group={isGroup} icon={iconOf(conv)} />}
+                {title && <Avatar name={title} size={40} group={isGroup} icon={iconOf(conv)} src={conv ? photoOf(conv) : avatars[otherId]} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong style={{ fontSize: '1rem' }}>{title}</strong>
                   {!isGroup && !isNotes && <div className="cm-muted">Conversación interna</div>}
@@ -732,6 +738,7 @@ export default function ComunicacionApp() {
                         m={m}
                         me={me}
                         userMap={userMap}
+                        avatars={avatars}
                         showSender={showSender}
                         replyTo={m.reply_to_id ? byId[m.reply_to_id] : null}
                         reactions={reactions[m.id]}
