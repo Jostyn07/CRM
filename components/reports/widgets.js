@@ -5,6 +5,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GOAL_METRICS, METRICS, PRESETS, money, num, presetRange, shortDate } from '../../lib/reports/api';
+import Icon from '../ui/icon';
+const MEDAL_COLORS = ['#d4a017', '#9ca3af', '#b87333'];
 
 // ---------------- ⓘ de una métrica
 export function InfoTip({ metric, period }) {
@@ -73,7 +75,7 @@ export function ReportFilters({ tz, value, onChange, branches, users, showBranch
       {value.preset === 'custom' && (
         <>
           <input className="input" type="date" style={{ width: 150 }} value={value.from} max={value.to} onChange={(e) => e.target.value && set({ from: e.target.value })} />
-          <span style={{ color: 'var(--color-text-muted)' }}>→</span>
+          <Icon name="arrow-right" size={14} color="var(--color-text-muted)" />
           <input className="input" type="date" style={{ width: 150 }} value={value.to} min={value.from} onChange={(e) => e.target.value && set({ to: e.target.value })} />
         </>
       )}
@@ -130,7 +132,7 @@ export function TileGrid({ children }) {
 }
 
 // ---------------- Barras por día (una serie) con tooltip
-export function DailyChart({ rows, field = 'leads_new', label = 'Leads nuevos', height = 180 }) {
+export function DailyChart({ rows, field = 'leads_new', label = 'Leads nuevos', height = 180, color = 'var(--color-primary)' }) {
   const [hover, setHover] = useState(null);
   const max = Math.max(1, ...rows.map((r) => Number(r[field]) || 0));
   const w = 100 / Math.max(rows.length, 1);
@@ -159,7 +161,7 @@ export function DailyChart({ rows, field = 'leads_new', label = 'Leads nuevos', 
                   width={w * 0.7}
                   height={Math.max(h, v ? 1 : 0)}
                   rx="0.6"
-                  fill="var(--color-primary)"
+                  fill={color}
                   opacity={hover === null || hover === i ? 1 : 0.45}
                 />
               </g>
@@ -296,7 +298,7 @@ export function RankingTable({ rows, userMap, me, currency }) {
         <tbody>
           {sorted.map((r, i) => (
             <tr key={r.user_id} style={{ borderBottom: '1px solid var(--color-border)', background: r.user_id === me ? 'var(--color-active-bg)' : 'transparent' }}>
-              <td style={{ padding: '6px 8px' }}>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</td>
+              <td style={{ padding: '6px 8px' }}>{i < 3 ? <Icon name="medal" size={16} color={MEDAL_COLORS[i]} /> : i + 1}</td>
               <td style={{ padding: '6px 8px', fontWeight: r.user_id === me ? 700 : 400 }}>
                 {userMap[r.user_id]?.name ?? 'Usuario'}
                 {r.user_id === me ? ' (tú)' : ''}
@@ -328,7 +330,7 @@ export function GoalsProgress({ rows, currency }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: 3 }}>
               <span>{GOAL_METRICS[g.metric] ?? g.metric}</span>
               <span>
-                <b>{fmt(g.actual)}</b> / {fmt(g.target)} {done ? '✅' : `· ${Math.round(p)}%`}
+                <b>{fmt(g.actual)}</b> / {fmt(g.target)} {done ? <Icon name="circle-check" size={14} color="var(--color-success, #16a34a)" /> : `· ${Math.round(p)}%`}
               </span>
             </div>
             <div style={{ height: 8, borderRadius: 4, background: 'var(--color-active-bg)' }} role="progressbar" aria-valuenow={Math.round(p)} aria-valuemin={0} aria-valuemax={100}>

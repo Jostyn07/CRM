@@ -20,7 +20,7 @@ import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupD
 import ForwardDialog from '../../components/chat/forwardDialog';
 import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, hora, useSignedUrl, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
-  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setPinned, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
@@ -362,7 +362,7 @@ export default function ComunicacionApp() {
     } else if (text) {
       addLocal(await sendMessage(conv, { body: text, reply_to_id: replyId }));
     }
-    playSent();
+    playSent('chat');
     loadConversations();
   }
 
@@ -398,6 +398,15 @@ export default function ComunicacionApp() {
       if (on && c.conversation_id === selectedId) closeConversation();
       setToast(on ? 'Marcado para leer más tarde' : 'Quitado de leer más tarde');
       setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handlePin(c, on) {
+    try {
+      await setPinned(c.conversation_id, on);
       loadConversations();
     } catch (e) {
       setError(e.message);
@@ -527,7 +536,7 @@ export default function ComunicacionApp() {
           <span className="wa-topbar-sub">Equipo</span>
         </div>
         <div className="wa-page-tools">
-          <SoundToggle />
+          <SoundToggle channel="chat" />
           {notifPerm === 'default' && (
             <button className="btn btn-secondary" onClick={enableNotifications}>
               <IconText name="bell" size={16}>Activar avisos</IconText>
@@ -609,7 +618,10 @@ export default function ComunicacionApp() {
                     <Avatar name={name} group={c.kind === 'group'} icon={iconOf(c)} />
                     <div className="cm-item-body">
                       <div className="cm-item-row">
-                        <span className="cm-item-name">{name}</span>
+                        <span className="cm-item-name">
+                          {c.pinned_at && <Icon name="pin" size={12} style={{ color: '#c99a3d', marginRight: 4, verticalAlign: '-1px' }} title="Fijado" />}
+                          {name}
+                        </span>
                         <span className="cm-item-time">{fechaCorta(c.last_message_at)}</span>
                       </div>
                       <div className="cm-item-row">
@@ -672,6 +684,9 @@ export default function ComunicacionApp() {
                 {conv && (
                   <CardMenu
                     items={[
+                      conv.pinned_at
+                        ? { label: 'Desfijar chat', onClick: () => handlePin(conv, false) }
+                        : { label: 'Fijar chat', onClick: () => handlePin(conv, true) },
                       conv.read_later
                         ? { label: 'Quitar de leer más tarde', onClick: () => handleReadLater(conv, false) }
                         : { label: 'Marcar para leer más tarde', onClick: () => handleReadLater(conv, true) },
@@ -805,7 +820,7 @@ export default function ComunicacionApp() {
         me={me}
         orgId={orgId}
         onDone={(n) => {
-          playSent();
+          playSent('chat');
           trackEvent('chat.forward', { entityType: 'chat_messages', entityId: forwardMsg?.id, metadata: { targets: n } });
           setForwardMsg(null);
           setToast(n > 1 ? `Reenviado a ${n} chats` : 'Reenviado');

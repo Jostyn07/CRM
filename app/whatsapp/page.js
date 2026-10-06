@@ -197,7 +197,7 @@ function Inbox() {
           <span className="wa-topbar-sub">Atención al cliente</span>
         </div>
         <div className="wa-page-tools">
-          <SoundToggle />
+          <SoundToggle channel="wa" />
           <WaModeToggle
             mode={mode}
             onChange={(m) => {

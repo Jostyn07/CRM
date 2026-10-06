@@ -187,7 +187,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
       } else {
         await sendText(conversationId, body, replyTo?.id);
       }
-      playSent();
+      playSent('wa');
       trackEvent('whatsapp.sent', { entityType: 'wa_conversations', entityId: conversationId, metadata: { files: files.length } });
       setText('');
       setFiles([]);

@@ -41,6 +41,12 @@ function LeadsList() {
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [filters, setFilters] = useState({});
+  // Enlace directo a "sin asignar" (por ejemplo, desde Reportes): /leads?asignado=none
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get('asignado') === 'none') setFilters((f) => ({ ...f, assigned: '__none' }));
+    } catch {}
+  }, []);
   const [showFilters, setShowFilters] = useState(false);
   const [sort, setSort] = useState('created_desc');
   const [page, setPage] = useState(1);
