@@ -20,7 +20,7 @@ import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupD
 import ForwardDialog from '../../components/chat/forwardDialog';
 import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, hora, useSignedUrl, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
-  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setNoReply, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
@@ -404,15 +404,6 @@ export default function ComunicacionApp() {
     }
   }
 
-  async function handleNoReply(c, on = true) {
-    try {
-      await setNoReply(c.conversation_id, on);
-      loadConversations();
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
   async function handleClearChat(c) {
     if (!window.confirm('¿Borrar este chat? Se borra solo para ti; los demás lo seguirán viendo.')) return;
     try {
@@ -510,9 +501,11 @@ export default function ComunicacionApp() {
     } catch {}
     router.push(back);
   };
+  // Cada pestaña muestra cuántas conversaciones tienen mensajes sin leer
+  const sinLeer = (c) => (Number(c.unread) || 0) > 0;
   const tabCount = {
-    chats: (conversations ?? []).filter((c) => c.kind !== 'group').length,
-    groups: (conversations ?? []).filter((c) => c.kind === 'group').length,
+    chats: (conversations ?? []).filter((c) => c.kind !== 'group' && sinLeer(c)).length,
+    groups: (conversations ?? []).filter((c) => c.kind === 'group' && sinLeer(c)).length,
     saved: (conversations ?? []).filter((c) => c.read_later).length,
   };
   const visibles = (conversations ?? []).filter((c) =>
@@ -523,6 +516,9 @@ export default function ComunicacionApp() {
     <main className="cm-page">
       <header className="wa-topbar">
         <div className="wa-topbar-brand">
+          <button type="button" className="fs-menu-btn" onClick={() => window.dispatchEvent(new CustomEvent('xiris:sidebar'))} title="Menú" aria-label="Abrir menú">
+            <Icon name="menu" size={18} />
+          </button>
           <span className="wa-topbar-logo">
             <Icon name="message-square" size={18} />
           </span>
@@ -589,7 +585,7 @@ export default function ComunicacionApp() {
               ].map(([k, l]) => (
                 <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>
                   {l}
-                  <span>{tabCount[k]}</span>
+                  {tabCount[k] > 0 && <span title={k === 'saved' ? 'Guardadas para leer más tarde' : 'Conversaciones con mensajes sin leer'}>{tabCount[k]}</span>}
                 </button>
               ))}
             </div>
@@ -628,11 +624,6 @@ export default function ComunicacionApp() {
                         {c.read_later && <Icon name="bookmark" size={13} style={{ color: '#c99a3d', flexShrink: 0 }} title="Leer más tarde" />}
                         {unread > 0 && <span className="cm-unread">{unread}</span>}
                       </div>
-                      {c.needs_reply && (
-                        <span className="cm-pending" title="Te escribió y aún no le contestas">
-                          <Icon name="clock" size={12} /> Pendiente de respuesta
-                        </span>
-                      )}
                     </div>
                   </button>
                 );
@@ -678,11 +669,6 @@ export default function ComunicacionApp() {
                     Info del grupo
                   </button>
                 )}
-                {conv?.needs_reply && (
-                  <button className="cm-chip" onClick={() => handleNoReply(conv, true)} title="Quita la marca de pendiente por responder">
-                    <IconText name="check" size={15}>No necesita respuesta</IconText>
-                  </button>
-                )}
                 {conv && (
                   <CardMenu
                     items={[
@@ -698,6 +684,7 @@ export default function ComunicacionApp() {
               <div
                 style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.8rem 1.4rem', display: 'flex', flexDirection: 'column', gap: 6 }}
                 ref={listRef}
+                data-chat-scroll
                 onScroll={(e) => {
                   const el = e.currentTarget;
                   stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;

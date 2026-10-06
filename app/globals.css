@@ -2014,3 +2014,11 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
   .cm-list { max-height: 50vh; }
   .cm-thread { height: 75vh; }
 }
+
+/* Menú flotante en pantallas completas (WhatsApp, Comunicación) */
+.sb.sb-float { transform: translateX(-100%); transition: transform 0.2s ease; z-index: 80; box-shadow: none; }
+.sb.sb-float.open { transform: none; box-shadow: 8px 0 32px rgba(0, 0, 0, 0.35); }
+.sb-edge { position: fixed; left: 0; top: 0; bottom: 0; width: 8px; z-index: 79; }
+.sb-scrim.sb-scrim-float { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); z-index: 75; }
+.fs-menu-btn { width: 38px; height: 38px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; background: transparent; color: #f5f1e8; border: 1px solid rgba(255,255,255,0.18); flex-shrink: 0; }
+.fs-menu-btn:hover { background: rgba(255,255,255,0.08); }

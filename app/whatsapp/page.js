@@ -186,6 +186,9 @@ function Inbox() {
       {/* Barra superior propia: WhatsApp se usa a pantalla completa */}
       <header className="wa-topbar">
         <div className="wa-topbar-brand">
+          <button type="button" className="fs-menu-btn" onClick={() => window.dispatchEvent(new CustomEvent('xiris:sidebar'))} title="Menú" aria-label="Abrir menú">
+            <Icon name="menu" size={18} />
+          </button>
           <span className="wa-topbar-logo">
             <Icon name="message-circle" size={18} />
           </span>

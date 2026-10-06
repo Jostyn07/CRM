@@ -88,6 +88,7 @@ export default function Sidebar() {
   const { resolvedTheme, toggleTheme } = useTheme();
   const { user, profile, organization, roleName, branches, activeBranch, setActiveBranchId, isPlatformOwner } = session;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const hoverOpen = useRef(false); // abierto al pasar el mouse por el borde izquierdo
   const [branchOpen, setBranchOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(pathname?.startsWith('/settings'));
@@ -107,7 +108,10 @@ export default function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
-    const h = (e) => setMobileOpen(typeof e.detail === 'boolean' ? e.detail : (v) => !v);
+    const h = (e) => {
+      hoverOpen.current = false;
+      setMobileOpen(typeof e.detail === 'boolean' ? e.detail : (v) => !v);
+    };
     window.addEventListener('xiris:sidebar', h);
     return () => window.removeEventListener('xiris:sidebar', h);
   }, []);
@@ -117,8 +121,10 @@ export default function Sidebar() {
     router.push('/login');
   }
 
-  // WhatsApp se abre a pantalla completa (tiene su propia barra superior)
-  if (HIDDEN_ON.includes(pathname) || pathname?.startsWith('/whatsapp') || pathname?.startsWith('/comunicacion') || !user) return null;
+  // WhatsApp y Comunicación van a pantalla completa: el menú queda oculto y
+  // se saca con el botón de 3 líneas o pasando el mouse por el borde izquierdo.
+  const floating = pathname?.startsWith('/whatsapp') || pathname?.startsWith('/comunicacion');
+  if (HIDDEN_ON.includes(pathname) || !user) return null;
 
   const displayName = profile?.full_name || user.email || 'Cuenta';
   const orgName = organization?.name ?? (isPlatformOwner ? 'Platform Owner' : 'Xiris');
@@ -155,8 +161,31 @@ export default function Sidebar() {
 
   return (
     <>
-      {mobileOpen && <div className="sb-scrim" onClick={() => setMobileOpen(false)} />}
-      <aside className={`sb${mobileOpen ? ' open' : ''}`} aria-label="Menú principal">
+      {floating && (
+        <div
+          className="sb-edge"
+          aria-hidden="true"
+          onMouseEnter={() => {
+            if (mobileOpen) return;
+            hoverOpen.current = true;
+            setMobileOpen(true);
+          }}
+        />
+      )}
+      {mobileOpen && <div className={`sb-scrim${floating ? ' sb-scrim-float' : ''}`} onClick={() => setMobileOpen(false)} />}
+      <aside
+        className={`sb${floating ? ' sb-float' : ''}${mobileOpen ? ' open' : ''}`}
+        aria-label="Menú principal"
+        onMouseLeave={() => {
+          if (hoverOpen.current) {
+            hoverOpen.current = false;
+            setMobileOpen(false);
+          }
+        }}
+        onClick={() => {
+          hoverOpen.current = false;
+        }}
+      >
         {/* Logo de la organización */}
         <div className="sb-logo">
           <a href="/dashboard" className="sb-logo-mark" aria-label={`${orgName} — Inicio`}>
