@@ -28,6 +28,7 @@ import CardMenu from '../../components/ui/cardMenu';
 import FileDropZone from '../../components/ui/fileDropZone';
 import ImageViewer from '../../components/chat/imageViewer';
 import { useTeamAvatars } from '../../lib/me/workspace';
+import ProfileCard, { PhotoViewer } from '../../components/me/profileCard';
 
 function Avatar({ name, size = 34, group, icon, src }) {
   const c = getAvatarColors(name);
@@ -62,6 +63,8 @@ export default function ComunicacionApp() {
   const searchParams = useSearchParams();
   const me = user?.id;
   const avatars = useTeamAvatars(!!me);
+  const [profileUser, setProfileUser] = useState(null); // perfil abierto
+  const [bigPhoto, setBigPhoto] = useState(null); // foto de grupo en grande
   const orgId = profile?.organization_id;
 
   const [conversations, setConversations] = useState(null);
@@ -669,9 +672,25 @@ export default function ComunicacionApp() {
           ) : (
             <>
               <div className="cm-thread-head">
-                {title && <Avatar name={title} size={40} group={isGroup} icon={iconOf(conv)} src={conv ? photoOf(conv) : avatars[otherId]} />}
+                {title && (
+                  <button
+                    type="button"
+                    className="cm-head-avatar"
+                    title={isGroup ? 'Ver foto del grupo' : isNotes ? undefined : 'Ver perfil'}
+                    disabled={isNotes || (isGroup && !conv?.photo_url)}
+                    onClick={() => (isGroup ? setBigPhoto({ src: conv.photo_url, title: conv.title }) : otherId && setProfileUser(otherId))}
+                  >
+                    <Avatar name={title} size={40} group={isGroup} icon={iconOf(conv)} src={conv ? photoOf(conv) : avatars[otherId]} />
+                  </button>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <strong style={{ fontSize: '1rem' }}>{title}</strong>
+                  {!isGroup && !isNotes && otherId ? (
+                    <button type="button" className="cm-head-name" onClick={() => setProfileUser(otherId)} title="Ver perfil">
+                      {title}
+                    </button>
+                  ) : (
+                    <strong style={{ fontSize: '1rem' }}>{title}</strong>
+                  )}
                   {!isGroup && !isNotes && <div className="cm-muted">Conversación interna</div>}
                   {isGroup && (
                     <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
@@ -739,6 +758,7 @@ export default function ComunicacionApp() {
                         me={me}
                         userMap={userMap}
                         avatars={avatars}
+                        onOpenProfile={setProfileUser}
                         showSender={showSender}
                         replyTo={m.reply_to_id ? byId[m.reply_to_id] : null}
                         reactions={reactions[m.id]}
@@ -837,6 +857,20 @@ export default function ComunicacionApp() {
           loadConversations();
         }}
       />
+      <ProfileCard
+        userId={profileUser}
+        fallbackName={userMap[profileUser]?.name}
+        onClose={() => setProfileUser(null)}
+        onMessage={
+          profileUser && profileUser !== me
+            ? (id) => {
+                setProfileUser(null);
+                startWith(id);
+              }
+            : null
+        }
+      />
+      {bigPhoto && <PhotoViewer src={bigPhoto.src} title={bigPhoto.title} onClose={() => setBigPhoto(null)} />}
       {lightbox && (
         <ImageViewer
           items={messages

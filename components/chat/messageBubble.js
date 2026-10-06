@@ -73,6 +73,7 @@ export default function MessageBubble({
   userMap,
   showSender,
   avatars,
+  onOpenProfile,
   replyTo,
   reactions = [],
   readOnly,
@@ -134,11 +135,18 @@ export default function MessageBubble({
       style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '75%', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}
     >
       {showSender && !mine && (
-        <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)', margin: '0 0 3px 2px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span
+          role={onOpenProfile ? 'button' : undefined}
+          tabIndex={onOpenProfile ? 0 : undefined}
+          title={onOpenProfile ? 'Ver perfil' : undefined}
+          onClick={() => onOpenProfile?.(m.sender_id)}
+          onKeyDown={(e) => e.key === 'Enter' && onOpenProfile?.(m.sender_id)}
+          style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)', margin: '0 0 3px 2px', display: 'inline-flex', alignItems: 'center', gap: 6, cursor: onOpenProfile ? 'pointer' : undefined }}
+        >
           {avatars?.[m.sender_id] ? (
-            <img src={avatars[m.sender_id]} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+            <img src={avatars[m.sender_id]} alt="" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
           ) : (
-            <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--color-active-bg)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>
+            <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--color-active-bg)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.64rem', color: 'var(--color-text-muted)' }}>
               {(userMap[m.sender_id]?.name ?? 'U')
                 .split(/\s+/)
                 .slice(0, 2)
