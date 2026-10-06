@@ -2131,3 +2131,14 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
   .rp-field .input, .rp-search { min-width: 0; width: 100%; }
   .rp-field { flex: 1 1 100%; }
 }
+
+/* ===== Barras de desplazamiento discretas (toda la plataforma) =====
+   Delgadas, sin flechas, casi transparentes; se marcan un poco más al
+   pasar el mouse por encima. */
+* { scrollbar-width: thin; scrollbar-color: var(--color-scrollbar-thumb) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--color-scrollbar-thumb); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(201, 154, 61, 0.55); }
