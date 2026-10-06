@@ -179,6 +179,7 @@ function Inbox() {
   }
 
   const nameOf = (c) => c.lead_name || c.contact_name || formatChat(c.chat_id);
+  const [panelWide, setPanelWide] = useState(false);
   const showPanel = panel && conv && mode !== 'wazzup' && selected !== '__wazzup__';
 
   return (
@@ -236,7 +237,7 @@ function Inbox() {
 
       {error && <p style={{ color: 'var(--color-danger)', margin: '0 1.5rem 8px' }}>{error}</p>}
 
-      <div className={`wa-layout${showPanel ? ' with-panel' : ''}`}>
+      <div className={`wa-layout${showPanel ? ' with-panel' : ''}${showPanel && panelWide ? ' panel-wide' : ''}`}>
         {/* ---------------- Conversaciones */}
         <section className="card wa-list">
           <header className="wa-list-head">
@@ -402,7 +403,7 @@ function Inbox() {
         </section>
 
         {/* ---------------- Ficha del cliente */}
-        {showPanel && <WaClientPanel conv={conv} onClose={() => setPanel(false)} />}
+        {showPanel && <WaClientPanel conv={conv} wide={panelWide} onToggleWide={() => setPanelWide((v) => !v)} onClose={() => setPanel(false)} />}
       </div>
     </main>
   );

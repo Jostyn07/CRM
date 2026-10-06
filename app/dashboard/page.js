@@ -28,6 +28,7 @@ import {
 } from '../../components/dashboard/widgets';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
+import { dashboardLayout, useMyPrefs } from '../../lib/me/workspace';
 import { useLeadConfig } from '../../lib/leads/useLeadConfig';
 import { useFunnelConfig } from '../../lib/opportunities/api';
 import { searchLeads } from '../../lib/leads/api';
@@ -66,6 +67,8 @@ export default function DashboardPage() {
 
 function Dashboard() {
   const { user, profile, scopeOf, can } = useSession();
+  const myPrefs = useMyPrefs(profile?.organization_id ? user?.id : null);
+  const layout = dashboardLayout(myPrefs);
   const config = useLeadConfig();
   const fconfig = useFunnelConfig();
   const tz = useOrgTimezone();
@@ -198,8 +201,9 @@ function Dashboard() {
       <Hero name={firstName} right={filters} />
       {error && <p style={{ color: 'var(--color-danger)', margin: '0 0 12px' }}>{error}</p>}
 
+      <div className="dash-flow">
       {/* Indicadores */}
-      <div className="kpi-grid">
+      <div className="kpi-grid" data-w="kpis">
         <KpiCard icon="users" color={COLORS.blue} label="Leads nuevos" value={kpis ? num(kpis.leads_new) : '—'} trend={kpis && prevKpis ? trend(kpis.leads_new, prevKpis.leads_new) : null} spark={spark('leads_new')} href="/leads" />
         <KpiCard
           icon="phone-call"
@@ -224,11 +228,11 @@ function Dashboard() {
       </div>
 
       {/* Gráficos */}
-      <div className="dash-grid-2">
-        <Panel icon="chart-column" title="Leads nuevos por día" action={<MiniSelect value={preset} onChange={setPreset} options={PERIODS} label="Período" />}>
+        <Panel w="daily" icon="chart-column" title="Leads nuevos por día" action={<MiniSelect value={preset} onChange={setPreset} options={PERIODS} label="Período" />}>
           <BarsChart rows={daily} field="leads_new" />
         </Panel>
         <Panel
+          w="funnel"
           icon="filter"
           title="Conversión por etapa"
           action={
@@ -239,15 +243,14 @@ function Dashboard() {
         >
           <StageBars stages={funnel} />
         </Panel>
-      </div>
 
       {/* Tareas, leads y equipo */}
-      <div className="dash-grid-3">
-        <Panel icon="square-check-big" title="Tareas de hoy" count={today.length || null} action={<LinkAction href="/tareas">Ver todas</LinkAction>}>
+        <Panel w="tasks" icon="square-check-big" title="Tareas de hoy" count={today.length || null} action={<LinkAction href="/tareas">Ver todas</LinkAction>}>
           <TodayTasks tasks={today} />
         </Panel>
         {can('leads.view') && (
           <Panel
+            w="leads"
             icon="users"
             title="Leads recientes"
             action={
@@ -269,14 +272,12 @@ function Dashboard() {
             <RecentLeads leads={leads} statusMap={config.maps.status} sourceMap={config.maps.source} />
           </Panel>
         )}
-        <Panel icon="trophy" title="Top del equipo" action={<MiniSelect value={teamMetric} onChange={setTeamMetric} options={TEAM_METRICS} label="Métrica" />}>
+        <Panel w="team" icon="trophy" title="Top del equipo" action={<MiniSelect value={teamMetric} onChange={setTeamMetric} options={TEAM_METRICS} label="Métrica" />}>
           <TeamTop rows={ranking} metric={teamMetric} userMap={config.maps.user} me={user?.id} />
         </Panel>
-      </div>
 
       {/* Actividad, metas y reportes */}
-      <div className="dash-grid-3">
-        <Panel icon="activity" title="Actividad reciente" action={can('audit.view') ? <LinkAction href="/settings/actividad">Ver toda la actividad</LinkAction> : null}>
+        <Panel w="activity" icon="activity" title="Actividad reciente" action={can('audit.view') ? <LinkAction href="/settings/actividad">Ver toda la actividad</LinkAction> : null}>
           <div className="chip-row" role="tablist">
             {ACTIVITY_FILTERS.map((x) => (
               <button key={x.key} role="tab" aria-selected={actFilter === x.key} className={`chip${actFilter === x.key ? ' active' : ''}`} onClick={() => setActFilter(x.key)}>
@@ -286,11 +287,14 @@ function Dashboard() {
           </div>
           <ActivityFeed items={activity} />
         </Panel>
-        <Panel icon="target" title="Metas del mes" action={can('goals.manage') ? <LinkAction href="/reportes?tab=metas">Editar metas</LinkAction> : null}>
+        <Panel w="goals" icon="target" title="Metas del mes" action={can('goals.manage') ? <LinkAction href="/reportes?tab=metas">Editar metas</LinkAction> : null}>
           <MonthGoals rows={goals} money={(v) => money(v, cur)} />
         </Panel>
-        <PromoCard />
+        <div data-w="promo" className="dash-promo-wrap">
+          <PromoCard />
+        </div>
       </div>
+      <style>{`.dash-flow > [data-w] { order: 99; } ${layout.order.map((k, i) => `.dash-flow > [data-w="${k}"] { order: ${i}; }`).join(' ')} ${[...layout.hidden].map((k) => `.dash-flow > [data-w="${k}"] { display: none !important; }`).join(' ')}`}</style>
     </main>
   );
 }

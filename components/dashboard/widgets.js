@@ -160,9 +160,9 @@ export function KpiCard({ icon, color, label, value, sub, trend, spark, href, ti
 }
 
 // ---------------------------------------------------------------- Tarjeta con título
-export function Panel({ icon, title, count, action, children, className = '', style }) {
+export function Panel({ icon, title, count, action, children, className = '', style, w }) {
   return (
-    <section className={`soft-card dash-panel ${className}`} style={style}>
+    <section className={`soft-card dash-panel ${className}`} style={style} data-w={w}>
       <header className="dash-panel-head">
         <h3>
           {icon && <Icon name={icon} size={18} style={{ color: 'var(--color-primary)' }} />}

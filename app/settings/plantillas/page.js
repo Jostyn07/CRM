@@ -17,7 +17,7 @@ const SCOPES = [
   ['branch', 'Sucursal'],
   ['organization', 'Organización'],
 ];
-const MODULE_LABEL = { leads: 'Leads', users: 'Usuarios', roles: 'Roles', branches: 'Sucursales', settings: 'Configuración', audit: 'Auditoría' };
+const MODULE_LABEL = { leads: 'Leads', users: 'Usuarios', roles: 'Roles', branches: 'Sucursales', settings: 'Configuración', audit: 'Auditoría', account: 'Cuenta y seguridad' };
 
 export default function RolesPage() {
   return (

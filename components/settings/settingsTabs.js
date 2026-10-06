@@ -25,7 +25,8 @@ export const SETTINGS_TABS = [
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
   { href: '/settings/sso', label: 'Inicio de sesión externo', show: (s) => s.can('sso.manage', 'organization') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
-  { href: '/settings', label: 'Mi cuenta', show: () => true },
+  { href: '/settings/accesos', label: 'Accesos y sesiones', show: (s) => ['branch', 'organization'].includes(s.scopeOf?.('account.access_log')) },
+  { href: '/settings', label: 'Mi espacio', show: () => true },
 ];
 
 export default function SettingsTabs() {

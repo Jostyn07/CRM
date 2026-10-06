@@ -27,6 +27,15 @@ const themeInitScript = `
       ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
       : pref;
     document.documentElement.setAttribute('data-theme', resolved);
+    var bg = window.localStorage.getItem('xiris.bg');
+    if (bg) document.documentElement.setAttribute('data-bg', bg);
+    var ac = window.localStorage.getItem('xiris.accent');
+    if (ac) {
+      var st = document.documentElement.style;
+      st.setProperty('--accent', ac);
+      st.setProperty('--accent-light', 'color-mix(in srgb, ' + ac + ' 62%, white)');
+      st.setProperty('--accent-strong', 'color-mix(in srgb, ' + ac + ' 82%, black)');
+    }
   } catch (e) {
     document.documentElement.setAttribute('data-theme', 'dark');
   }

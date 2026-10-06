@@ -5,8 +5,9 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from '../../lib/auth/sessionContext';
+import Icon, { IconText } from '../ui/icon';
 import { trackEvent } from '../../lib/activity/tracker';
-import { HIDDEN_FIELDS, fmtValue, humanize, matchingLeads, money, policySecrets } from '../../lib/clients/api';
+import { HIDDEN_FIELDS, MAIN_FIELDS, fmtValue, humanize, matchingLeads, money, policySecrets } from '../../lib/clients/api';
 
 const th = { padding: '4px 8px', textAlign: 'left', color: 'var(--color-text-muted)', fontSize: '0.74rem', whiteSpace: 'nowrap' };
 const td = { padding: '4px 8px', fontSize: '0.82rem', verticalAlign: 'top' };
@@ -25,8 +26,11 @@ export default function ClientCard({ client, showLeads = true, compact = false }
 
   const policies = Array.isArray(client.policies) ? client.policies : [];
   const deps = Array.isArray(client.dependents) ? client.dependents : [];
-  const other = Object.entries(client.data ?? {}).filter(
-    ([k, v]) => !HIDDEN_FIELDS.has(k) && v !== null && v !== '' && typeof v !== 'object' && !/(tel|cel|phone|whats|movil)/i.test(k)
+  const data = client.data ?? {};
+  const mainKeys = new Set(MAIN_FIELDS.map(([k]) => k));
+  const main = MAIN_FIELDS.filter(([k]) => data[k] !== null && data[k] !== undefined && data[k] !== '');
+  const other = Object.entries(data).filter(
+    ([k, v]) => !HIDDEN_FIELDS.has(k) && !mainKeys.has(k) && v !== null && v !== '' && typeof v !== 'object' && !/(tel|cel|phone|whats|movil)/i.test(k)
   );
 
   async function showSecrets() {
@@ -47,11 +51,29 @@ export default function ClientCard({ client, showLeads = true, compact = false }
         </div>
         <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
           {(client.phones ?? []).map((p) => (
-            <span key={p}>📞 {p}</span>
+            <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Icon name="phone" size={13} />
+              {p}
+            </span>
           ))}
-          {client.email && <span>✉️ {client.email}</span>}
-          {client.birth_date && <span>🎂 {fmtValue(client.birth_date)}</span>}
-          {client.operator_name && <span>👤 Operador: {client.operator_name}</span>}
+          {client.email && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Icon name="mail" size={13} />
+              {client.email}
+            </span>
+          )}
+          {client.birth_date && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Icon name="cake" size={13} />
+              {fmtValue(client.birth_date)}
+            </span>
+          )}
+          {client.operator_name && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Icon name="user" size={13} />
+              Operador: {client.operator_name}
+            </span>
+          )}
         </div>
         {showLeads && leads && (
           <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
@@ -72,18 +94,85 @@ export default function ClientCard({ client, showLeads = true, compact = false }
         )}
       </div>
 
+      {main.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${compact ? 150 : 180}px, 1fr))`, gap: '6px 12px' }}>
+          {main.map(([k, label]) => (
+            <div key={k}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{label}</div>
+              <div style={{ fontSize: '0.83rem' }}>{k === 'ingreso_anual' ? money(data[k]) : fmtValue(data[k])}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong style={{ fontSize: '0.85rem' }}>Pólizas ({policies.length})</strong>
           {policies.length > 0 && can('clients.sensitive') && !secrets && (
             <button className="btn btn-secondary" style={{ height: 26, fontSize: '0.74rem' }} onClick={showSecrets}>
-              🔑 Ver claves
+              <IconText name="key-round" size={13}>Ver claves</IconText>
             </button>
           )}
         </div>
         {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.78rem' }}>{error}</p>}
         {policies.length === 0 ? (
           <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Sin pólizas.</p>
+        ) : compact ? (
+          <div className="client-policy-cards">
+            {policies.map((p, i) => (
+              <div key={p.id ?? i} className="client-policy-card">
+                <div className="wide">
+                  <small>Compañía / plan</small>
+                  <span>
+                    <b>{p.compania || '—'}</b>
+                    {p.plan && ` · ${p.plan}`}
+                  </span>
+                </div>
+                <div>
+                  <small>Póliza</small>
+                  <span>{p.numero_poliza || '—'}</span>
+                </div>
+                <div>
+                  <small>Estado</small>
+                  <span>{p.estado_compania || '—'}</span>
+                </div>
+                <div>
+                  <small>Prima</small>
+                  <span>{money(p.prima)}</span>
+                </div>
+                <div>
+                  <small>Crédito fiscal</small>
+                  <span>{money(p.credito_fiscal)}</span>
+                </div>
+                <div>
+                  <small>Cobertura</small>
+                  <span>
+                    {fmtValue(p.fecha_inicial_cobertura || p.fecha_efectividad)} – {fmtValue(p.fecha_final_cobertura)}
+                  </span>
+                </div>
+                <div>
+                  <small>Pagado hasta</small>
+                  <span>{fmtValue(p.pagado_hasta)}</span>
+                </div>
+                <div>
+                  <small>Member ID</small>
+                  <span>{p.member_id || '—'}</span>
+                </div>
+                {(p.documentos_pendientes || p.estado_documentos) && (
+                  <div>
+                    <small>Documentos</small>
+                    <span style={p.documentos_pendientes ? { color: '#d97706' } : undefined}>{p.documentos_pendientes || p.estado_documentos}</span>
+                  </div>
+                )}
+                {secrets && (
+                  <div>
+                    <small>Clave</small>
+                    <span>{secrets[String(p.id)] ?? '—'}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -95,6 +184,8 @@ export default function ClientCard({ client, showLeads = true, compact = false }
                   <th style={th}>Prima</th>
                   <th style={th}>Crédito fiscal</th>
                   <th style={th}>Cobertura</th>
+                  <th style={th}>Pagado hasta</th>
+                  <th style={th}>Documentos</th>
                   <th style={th}>Member ID</th>
                   {secrets && <th style={th}>Clave</th>}
                 </tr>
@@ -107,11 +198,25 @@ export default function ClientCard({ client, showLeads = true, compact = false }
                       {p.compania || '—'}
                       {p.plan && <div style={{ color: 'var(--color-text-muted)', fontSize: '0.76rem' }}>{p.plan}</div>}
                     </td>
-                    <td style={td}>{p.estado || '—'}</td>
+                    <td style={td}>
+                      {p.estado_compania || '—'}
+                      {p.estado_mercado && <div style={{ color: 'var(--color-text-muted)', fontSize: '0.74rem' }}>Mercado: {p.estado_mercado}</div>}
+                    </td>
                     <td style={td}>{money(p.prima)}</td>
                     <td style={td}>{money(p.credito_fiscal)}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {fmtValue(p.fecha_inicial_cobertura || p.fecha_efectividad)} – {fmtValue(p.fecha_final_cobertura)}
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtValue(p.pagado_hasta)}</td>
+                    <td style={td}>
+                      {p.documentos_pendientes ? (
+                        <span style={{ color: '#d97706' }}>
+                          {p.documentos_pendientes}
+                          {p.fecha_plazo_documentos && ` (plazo ${fmtValue(p.fecha_plazo_documentos)})`}
+                        </span>
+                      ) : (
+                        p.estado_documentos || '—'
+                      )}
                     </td>
                     <td style={td}>{p.member_id || '—'}</td>
                     {secrets && <td style={td}>{secrets[String(p.id)] ?? '—'}</td>}
@@ -133,6 +238,7 @@ export default function ClientCard({ client, showLeads = true, compact = false }
               <li key={d.id ?? i}>
                 {[d.nombres, d.apellidos].filter(Boolean).join(' ') || 'Sin nombre'}
                 {d.relacion && ` · ${d.relacion}`}
+                {d.sexo && ` · ${d.sexo}`}
                 {d.fecha_nacimiento && ` · ${fmtValue(d.fecha_nacimiento)}`}
                 {d.aplica === false && ' · no aplica'}
               </li>

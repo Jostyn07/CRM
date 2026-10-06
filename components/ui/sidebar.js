@@ -15,6 +15,7 @@ import { useTheme } from '../../lib/theme/themeContext';
 import { useMyTaskCounts } from '../../lib/tasks/api';
 import { useChatUnread } from '../../lib/chat/api';
 import { useWaUnread } from '../../lib/whatsapp/api';
+import { STATUSES, useMyPrefs } from '../../lib/me/workspace';
 import Icon from './icon';
 import Avatar, { initials } from './avatar';
 
@@ -52,7 +53,8 @@ const SETTINGS_LINKS = [
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
   { href: '/settings/sso', label: 'Inicio de sesión externo', show: (s) => s.can('sso.manage', 'organization') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
-  { href: '/settings', label: 'Mi cuenta', show: () => true },
+  { href: '/settings/accesos', label: 'Accesos y sesiones', show: (s) => ['branch', 'organization'].includes(s.scopeOf?.('account.access_log')) },
+  { href: '/settings', label: 'Mi espacio', show: () => true },
 ];
 
 // Logo: el de la organización (Mi cuenta) o, si no hay, el de la
@@ -100,6 +102,7 @@ export default function Sidebar() {
   const orgUser = profile?.organization_id ? user?.id : null;
   const taskCounts = useMyTaskCounts(orgUser);
   const chatUnread = useChatUnread(orgUser);
+  const myPrefs = useMyPrefs(orgUser);
   const waUnread = useWaUnread(profile?.organization_id && session.can('whatsapp.view') ? user?.id : null);
 
   useEffect(() => {
@@ -276,7 +279,7 @@ export default function Sidebar() {
             <div className="sb-menu up" role="menu" style={{ left: '0.85rem', right: '0.85rem' }}>
               <a className="sb-menu-item" href="/settings">
                 <Icon name="user" size={15} />
-                Mi cuenta
+                Mi espacio
               </a>
               <button className="sb-menu-item" onClick={toggleTheme}>
                 <Icon name={resolvedTheme === 'light' ? 'moon' : 'sun'} size={15} />
@@ -289,11 +292,19 @@ export default function Sidebar() {
             </div>
           )}
           <button className="sb-user" onClick={() => setUserOpen((v) => !v)} aria-haspopup="menu" aria-expanded={userOpen}>
-            <Avatar name={displayName} size={40} gold />
+            <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+              <Avatar name={displayName} src={myPrefs?.prefs?.avatar_url || undefined} size={40} gold />
+              {myPrefs && (
+                <span
+                  title={STATUSES[myPrefs.availability]?.label}
+                  style={{ position: 'absolute', right: -1, bottom: -1, width: 12, height: 12, borderRadius: '50%', background: STATUSES[myPrefs.availability]?.color, border: '2px solid #15120e' }}
+                />
+              )}
+            </span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontWeight: 650, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
               <div style={{ fontSize: '0.76rem', color: 'var(--sb-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {isPlatformOwner ? 'Dueño de la plataforma' : roleName || 'Usuario'}
+                {isPlatformOwner ? 'Dueño de la plataforma' : myPrefs?.job_title || roleName || 'Usuario'}
               </div>
             </span>
             <Icon name="ellipsis-vertical" size={18} style={{ color: 'var(--sb-muted)' }} />

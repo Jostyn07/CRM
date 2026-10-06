@@ -9,6 +9,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import RequirePermission from '../../components/ui/requirePermission';
 import Modal from '../../components/ui/modal';
 import ClientCard from '../../components/clients/clientCard';
+import ClientPanel, { StatusPill } from '../../components/clients/clientPanel';
 import { useSession } from '../../lib/auth/sessionContext';
 import { trackEvent } from '../../lib/activity/tracker';
 import { relTime } from '../../lib/leads/format';
@@ -21,9 +22,9 @@ import Icon, { IconText } from '../../components/ui/icon';
 
 const FILTERS = [
   { key: 'all', label: 'Todos' },
-  { key: 'in_leads', label: 'Ya están en leads' },
-  { key: 'not_in_leads', label: 'No están en leads' },
-  { key: 'shared_phone', label: 'Número compartido (familia)' },
+  { key: 'in_leads', label: 'Con lead' },
+  { key: 'not_in_leads', label: 'Sin lead' },
+  { key: 'shared_phone', label: 'Teléfono compartido' },
 ];
 const PAGE = 50;
 
@@ -145,184 +146,258 @@ function Clients() {
   }
 
   const pages = Math.max(1, Math.ceil(total / PAGE));
+  const [onlyChanges, setOnlyChanges] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const splitPolicy = (s) => {
+    const parts = String(s || '').split(' · ');
+    if (parts.length >= 3) return { company: parts[0], plan: parts.slice(1, -1).join(' · '), status: parts[parts.length - 1] };
+    if (parts.length === 2) return { company: parts[0], plan: parts[1], status: '' };
+    return { company: parts[0] || '', plan: '', status: '' };
+  };
+  const pageList = () => {
+    const out = [];
+    for (let i = 1; i <= pages; i++) if (i === 1 || i === pages || Math.abs(i - page) <= 1) out.push(i);
+    return out.reduce((acc, n, i) => (i && n - out[i - 1] > 1 ? [...acc, '…', n] : [...acc, n]), []);
+  };
 
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 1250 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: '0.8rem' }}>
+    <main className="cl-page">
+      <header className="cl-head">
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Clientes</h1>
-          <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)' }}>
-            Clientes de Asesorías, cruzados con los leads por teléfono y correo.
-            {can('clients.manage') && (
-              <>
-                {' '}Se actualizan todos los días a las 7:00 a. m. y a las 12:00 m.
-                {status?.last_sync_at && ` Última sincronización ${relTime(status.last_sync_at)}.`}
-                {status?.connected && ` ${Number(status.total_local).toLocaleString('es-CO')} clientes en la plataforma.`}
-              </>
-            )}
-          </p>
+          <h1>
+            Clientes
+            {status?.connected && <span className="cl-count">{Number(status.total_local ?? total).toLocaleString('es-CO')} clientes</span>}
+          </h1>
+          <p>Clientes de Asesorías, cruzados con los leads por teléfono y correo.</p>
         </div>
         {can('clients.manage') && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div className="cl-head-actions">
             <button className="btn btn-secondary" onClick={() => setConfig(true)}>
-              <IconText name="settings" size={15}>Conexión</IconText>
+              <IconText name="sliders-horizontal" size={15}>Conexión</IconText>
             </button>
             {portals.length > 0 && (
               <button className="btn btn-secondary" onClick={() => setPortalsOpen(true)}>
                 <IconText name="building-2" size={15}>Portales</IconText>
               </button>
             )}
-            {status?.connected && (
-              <>
-                <button className="btn btn-secondary" disabled={syncing} onClick={() => sync(false)} title="Solo los clientes que cambiaron en Asesorías">
-                  Solo cambios
-                </button>
-                <button className="btn btn-primary" disabled={syncing} onClick={() => sync(true)} title="Actualiza todos los clientes (pólizas y dependientes incluidos)">
-                  <IconText name="refresh-cw" size={15}>{syncing ? 'Sincronizando…' : 'Sincronizar todo'}</IconText>
-                </button>
-              </>
-            )}
           </div>
         )}
-      </div>
+      </header>
 
       {status && !status.connected && (
-        <div className="card" style={{ marginBottom: '1rem', fontSize: '0.88rem' }}>
-          {can('clients.manage') ? 'Conecta la API de clientes de Asesorías con el botón “Conexión”.' : 'Un administrador todavía no ha conectado la fuente de clientes.'}
+        <div className="card cl-syncbar">
+          <Icon name="info" size={16} />
+          <span>{can('clients.manage') ? 'Conecta la API de clientes de Asesorías con el botón “Conexión”.' : 'Un administrador todavía no ha conectado la fuente de clientes.'}</span>
+        </div>
+      )}
+      {can('clients.manage') && status?.connected && (
+        <div className="card cl-syncbar">
+          <Icon name="clock" size={17} />
+          <strong>{status.last_sync_at ? `Última sincronización ${relTime(status.last_sync_at)}` : 'Aún no se ha sincronizado'}</strong>
+          <span className="cl-sep" />
+          <span className="cl-muted">Completa: todos los días 7:00 a. m. y 12:00 m. · Cambios: cada 10 min</span>
+          <div className="cl-sync-right">
+            <label className="cl-check" title="Solo trae los clientes que cambiaron en Asesorías">
+              <input type="checkbox" checked={onlyChanges} onChange={(e) => setOnlyChanges(e.target.checked)} />
+              <span>
+                Solo cambios
+                <small>Alcance de la sincronización</small>
+              </span>
+            </label>
+            <button className="btn cl-gold" disabled={syncing} onClick={() => sync(!onlyChanges)}>
+              <IconText name="refresh-cw" size={15}>{syncing ? 'Sincronizando…' : 'Sincronizar'}</IconText>
+            </button>
+          </div>
         </div>
       )}
       {can('clients.manage') && status?.last_status === 'error' && status.last_error && (
-        <p style={{ color: 'var(--color-danger)', fontSize: '0.84rem', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="triangle-alert" size={15} />
-          Última sincronización con error: {status.last_error}
+        <p className="cl-error">
+          <Icon name="triangle-alert" size={15} /> Última sincronización con error: {status.last_error}
         </p>
       )}
       {msg && <p style={{ color: 'var(--color-success, #16a34a)', fontSize: '0.85rem', marginBottom: 8 }}>{msg}</p>}
-      {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem', marginBottom: 8 }}>{error}</p>}
+      {error && <p className="cl-error">{error}</p>}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-        <input className="input" style={{ maxWidth: 300 }} placeholder="Buscar nombre, teléfono, correo o póliza…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <div className="tabs-bar" style={{ marginBottom: 0 }}>
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`tab-link${filter === f.key ? ' active' : ''}`}
-              onClick={() => {
-                setFilter(f.key);
-                setPage(1);
-              }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', borderBottom: filter === f.key ? '2px solid var(--color-primary)' : '2px solid transparent' }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {portals.length > 1 && (
-          <select
-            className="input"
-            style={{ width: 200 }}
-            value={portal}
-            onChange={(e) => {
-              setPortal(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">Todos los portales</option>
-            {portals.map((p) => (
-              <option key={p.portal_key} value={p.portal_key}>
-                {p.name}
-              </option>
-            ))}
-            <option value="__none__">Sin portal</option>
-          </select>
-        )}
-        <label style={{ fontSize: '0.82rem', display: 'flex', gap: 4, alignItems: 'center' }}>
-          <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Incluir archivados
-        </label>
+      <div className="card cl-search">
+        <Icon name="search" size={17} />
+        <input placeholder="Buscar por nombre, teléfono, correo o póliza" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)', fontSize: '0.78rem' }}>
-              <th style={{ padding: '0.55rem 0.7rem' }}>Cliente</th>
-              <th style={{ padding: '0.55rem 0.7rem' }}>Teléfono</th>
-              <th style={{ padding: '0.55rem 0.7rem' }}>Póliza más reciente</th>
-              <th style={{ padding: '0.55rem 0.7rem' }}>Dependientes</th>
-              {portals.length > 0 && <th style={{ padding: '0.55rem 0.7rem' }}>Portal</th>}
-              <th style={{ padding: '0.55rem 0.7rem' }}>Operador</th>
-              <th style={{ padding: '0.55rem 0.7rem' }}>En la plataforma</th>
-              <th style={{ padding: '0.55rem 0.7rem', textAlign: 'right' }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows === null && (
-              <tr>
-                <td colSpan={8} style={{ padding: '1.2rem', textAlign: 'center' }}>
-                  Cargando…
-                </td>
-              </tr>
-            )}
-            {rows?.length === 0 && (
-              <tr>
-                <td colSpan={8} style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                  No hay clientes con ese filtro.
-                </td>
-              </tr>
-            )}
-            {rows?.map((c) => (
-              <tr key={c.id} style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }} onClick={() => openClient(c.id)}>
-                <td style={{ padding: '0.5rem 0.7rem' }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {c.full_name || 'Sin nombre'} {c.archived && <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>(archivado)</span>}
-                  </div>
-                  {c.email && <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{c.email}</div>}
-                </td>
-                <td style={{ padding: '0.5rem 0.7rem', whiteSpace: 'nowrap' }}>
-                  {(c.phones ?? []).join(', ') || '—'}
-                  {c.shared_phone_count > 0 && (
-                    <div style={{ fontSize: '0.72rem', color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 4 }} title="Otras personas tienen este número">
-                      <Icon name="users" size={12} />+{c.shared_phone_count} con el mismo número
-                    </div>
-                  )}
-                </td>
-                <td style={{ padding: '0.5rem 0.7rem' }}>{c.active_policy || (c.policies_count ? `${c.policies_count} póliza(s)` : '—')}</td>
-                <td style={{ padding: '0.5rem 0.7rem' }}>{c.dependents_count || '—'}</td>
-                {portals.length > 0 && <td style={{ padding: '0.5rem 0.7rem' }}>{c.portal || '—'}</td>}
-                <td style={{ padding: '0.5rem 0.7rem' }}>{c.operator_name || '—'}</td>
-                <td style={{ padding: '0.5rem 0.7rem' }} onClick={(e) => e.stopPropagation()}>
-                  {c.lead_ids?.length ? (
-                    <a href={`/leads/${c.lead_ids[0]}?tab=cliente`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <Icon name="circle-check" size={14} color="var(--color-success, #16a34a)" />
-                      Ver lead{c.lead_ids.length > 1 ? ` (+${c.lead_ids.length - 1})` : ''}
-                    </a>
+      <div className={`cl-layout${panelOpen ? '' : ' no-panel'}`}>
+        <section className="card cl-list">
+          <div className="cl-list-top">
+            <span className="cl-muted">Póliza más reciente por cliente</span>
+            <div className="cl-list-tools">
+              {portals.length > 1 && (
+                <select
+                  className="input"
+                  value={portal}
+                  onChange={(e) => {
+                    setPortal(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">Todos los portales</option>
+                  {portals.map((p) => (
+                    <option key={p.portal_key} value={p.portal_key}>
+                      {p.name}
+                    </option>
+                  ))}
+                  <option value="__none__">Sin portal</option>
+                </select>
+              )}
+              <label className="cl-check">
+                <input
+                  type="checkbox"
+                  checked={archived}
+                  onChange={(e) => {
+                    setArchived(e.target.checked);
+                    setPage(1);
+                  }}
+                />
+                <span>Incluir archivados</span>
+              </label>
+              {!panelOpen && (
+                <button className="btn btn-secondary" onClick={() => setPanelOpen(true)}>
+                  <IconText name="contact" size={15}>Mostrar ficha</IconText>
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="cl-tabs" role="tablist">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                role="tab"
+                aria-selected={filter === f.key}
+                className={filter === f.key ? 'active' : ''}
+                onClick={() => {
+                  setFilter(f.key);
+                  setPage(1);
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="cl-table-wrap">
+            <table className="cl-table">
+              <thead>
+                <tr>
+                  <th>Cliente ↑</th>
+                  <th>Teléfono</th>
+                  <th>Compañía / plan · Estado</th>
+                  <th className="num">Depend.</th>
+                  {portals.length > 0 && <th>Portal</th>}
+                  <th>Operador</th>
+                  <th>Vínculo con lead</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!rows && (
+                  <tr>
+                    <td colSpan={8} className="cl-empty">
+                      Cargando…
+                    </td>
+                  </tr>
+                )}
+                {rows?.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="cl-empty">
+                      No hay clientes con ese filtro.
+                    </td>
+                  </tr>
+                )}
+                {rows?.map((c) => {
+                  const pol = splitPolicy(c.active_policy);
+                  return (
+                    <tr key={c.id} className={open?.id === c.id ? 'active' : ''} onClick={() => openClient(c.id)}>
+                      <td>
+                        <div className="cl-name">
+                          {c.full_name || 'Sin nombre'} {c.archived && <small>(archivado)</small>}
+                        </div>
+                        {c.email && <div className="cl-sub">{c.email}</div>}
+                      </td>
+                      <td className="nowrap">
+                        {(c.phones ?? []).join(', ') || '—'}
+                        {c.shared_phone_count > 0 && (
+                          <>
+                            <div className="cl-shared">
+                              <Icon name="users" size={12} /> Teléfono compartido
+                            </div>
+                            <div className="cl-sub">+{c.shared_phone_count} con el mismo número</div>
+                          </>
+                        )}
+                      </td>
+                      <td className="cl-policy-cell">
+                        {c.active_policy ? (
+                          <>
+                            <div className="cl-company">{pol.company}</div>
+                            {pol.plan && <div className="cl-sub">{pol.plan}</div>}
+                            {pol.status && <StatusPill value={pol.status} />}
+                          </>
+                        ) : (
+                          <span className="cl-sub">{c.policies_count ? `${c.policies_count} póliza(s)` : 'Sin pólizas'}</span>
+                        )}
+                      </td>
+                      <td className="num">{c.dependents_count || <span className="cl-sub">No informado</span>}</td>
+                      {portals.length > 0 && <td>{c.portal || '—'}</td>}
+                      <td>{c.operator_name || '—'}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {c.lead_ids?.length ? (
+                          <a className="cl-lead-link" href={`/leads/${c.lead_ids[0]}?tab=cliente`}>
+                            Ver lead{c.lead_ids.length > 1 ? ` (+${c.lead_ids.length - 1})` : ''} <Icon name="external-link" size={12} />
+                          </a>
+                        ) : (
+                          <span className="cl-sub">Sin vincular</span>
+                        )}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="cl-actions">
+                          <button type="button" className={`cl-ficha${open?.id === c.id ? ' on' : ''}`} onClick={() => openClient(c.id)}>
+                            Ficha
+                          </button>
+                          {busyId === c.id ? <span className="cl-sub">Abriendo…</span> : <CardMenu items={clientActions(c)} />}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <footer className="cl-list-foot">
+            <span>
+              {total.toLocaleString('es-CO')} clientes{filter !== 'all' || q || portal || archived ? ' con este filtro' : ' en la plataforma'}
+            </span>
+            {pages > 1 && (
+              <div className="cl-pager">
+                <button disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Anterior">
+                  <Icon name="chevron-left" size={15} />
+                </button>
+                {pageList().map((n, i) =>
+                  n === '…' ? (
+                    <span key={`d${i}`}>…</span>
                   ) : (
-                    <span style={{ color: '#d97706' }}>No está</span>
-                  )}
-                </td>
-                <td style={{ padding: '0.5rem 0.7rem', textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                  {busyId === c.id ? <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Abriendo…</span> : <CardMenu items={clientActions(c)} />}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    <button key={n} className={n === page ? 'on' : ''} onClick={() => setPage(n)}>
+                      {n}
+                    </button>
+                  )
+                )}
+                <button disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label="Siguiente">
+                  <Icon name="chevron-right" size={15} />
+                </button>
+              </div>
+            )}
+          </footer>
+        </section>
+
+        {panelOpen && <ClientPanel client={open} onClose={() => setPanelOpen(false)} />}
       </div>
 
-      {pages > 1 && (
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginTop: 10, fontSize: '0.85rem' }}>
-          <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-            <Icon name="chevron-left" size={16} />
-          </button>
-          Página {page} de {pages} · {total} clientes
-          <button className="btn btn-secondary" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-            <Icon name="chevron-right" size={16} />
-          </button>
-        </div>
-      )}
-
-      <Modal open={!!open} onClose={() => setOpen(null)} title="Cliente" width={860}>
-        {open && <ClientCard client={open} />}
+      <Modal open={!!open && !panelOpen} onClose={() => setOpen(null)} title="Cliente" width={860}>
+        {open && !panelOpen && <ClientCard client={open} />}
       </Modal>
       <Modal open={portalsOpen} onClose={() => setPortalsOpen(false)} title="Portales de Asesorías" width={620}>
         {portalsOpen && (

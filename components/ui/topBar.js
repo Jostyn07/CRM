@@ -53,7 +53,7 @@ export default function TopBar() {
           <div className="pop" role="menu">
             <a className="pop-item" href="/settings">
               <Icon name="user" size={15} />
-              Mi cuenta
+              Mi espacio
             </a>
             <button
               className="pop-item"

@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useSession } from '../../lib/auth/sessionContext';
 import TopBar from './topBar';
+import WorkspaceEffects from '../me/workspaceEffects';
 
 const NO_SIDEBAR = ['/login', '/', '/set-password', '/auth/aceptar-invitacion', '/auth/sso', '/registro'];
 
@@ -25,6 +26,7 @@ export default function AppShell({ children }) {
 
   return (
     <div style={{ marginLeft: hideSidebar ? 0 : 'var(--sidebar-width)', minHeight: '100vh' }}>
+      {user && <WorkspaceEffects />}
       {!hideSidebar && <TopBar />}
       {children}
     </div>

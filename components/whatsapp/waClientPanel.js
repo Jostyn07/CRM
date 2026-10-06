@@ -11,7 +11,7 @@ import { useSession } from '../../lib/auth/sessionContext';
 import { clientsByPhone } from '../../lib/clients/api';
 import { formatChat } from '../../lib/whatsapp/api';
 
-export default function WaClientPanel({ conv, onClose }) {
+export default function WaClientPanel({ conv, onClose, wide = false, onToggleWide }) {
   const { can } = useSession();
   const canClients = can('clients.view');
   const [clients, setClients] = useState(null);
@@ -35,11 +35,18 @@ export default function WaClientPanel({ conv, onClose }) {
     <aside className="wa-panel card">
       <header className="wa-panel-head">
         <strong>Ficha del cliente</strong>
+        <span style={{ display: 'inline-flex', gap: 6 }}>
+        {onToggleWide && (
+          <button type="button" className="wa-icon-btn" onClick={onToggleWide} title={wide ? 'Reducir ficha' : 'Expandir ficha'} aria-label={wide ? 'Reducir ficha' : 'Expandir ficha'}>
+            <Icon name={wide ? 'minimize-2' : 'maximize-2'} size={16} />
+          </button>
+        )}
         {onClose && (
           <button type="button" className="wa-icon-btn" onClick={onClose} title="Ocultar ficha">
             <Icon name="x" size={16} />
           </button>
         )}
+        </span>
       </header>
 
       <div className="wa-panel-body">
