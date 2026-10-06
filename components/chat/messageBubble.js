@@ -351,6 +351,7 @@ export default function MessageBubble({
 // ✓ enviado · ✓✓ azul: lo vieron todos. Clic: quién lo vio y cuándo.
 function ReadTicks({ info, userMap, isGroup, sticker }) {
   const [open, setOpen] = useState(false);
+  const [below, setBelow] = useState(false);
   const ref = useRef(null);
   const readBy = new Map(info.reads.map((r) => [r.user_id, r.read_at]));
   const seen = info.recipients.filter((u) => readBy.has(u));
@@ -387,6 +388,10 @@ function ReadTicks({ info, userMap, isGroup, sticker }) {
         title={summary}
         onClick={(e) => {
           e.stopPropagation();
+          // Si el mensaje está cerca del borde superior, la lista abre hacia abajo
+          const r = e.currentTarget.getBoundingClientRect();
+          const box = e.currentTarget.closest('[data-chat-scroll]')?.getBoundingClientRect();
+          setBelow(r.top - (box?.top ?? 0) < 300);
           setOpen((v) => !v);
         }}
         style={{
@@ -411,11 +416,14 @@ function ReadTicks({ info, userMap, isGroup, sticker }) {
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
-            bottom: '140%',
+            ...(below ? { top: '140%' } : { bottom: '140%' }),
             right: 0,
             zIndex: 30,
             minWidth: 230,
             maxWidth: 280,
+            maxHeight: 'min(280px, 45vh)',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
             padding: '0.6rem 0.7rem',
             color: 'var(--color-text)',
             textAlign: 'left',
@@ -426,7 +434,7 @@ function ReadTicks({ info, userMap, isGroup, sticker }) {
             whiteSpace: 'normal',
           }}
         >
-          <strong style={{ display: 'block', marginBottom: 4 }}>Info del mensaje</strong>
+          <strong style={{ display: 'block', marginBottom: 4, position: 'sticky', top: -10, background: 'var(--color-surface-solid, var(--color-bg))', paddingTop: 2, zIndex: 1 }}>Info del mensaje</strong>
           {seen.length > 0 && (
             <>
               <span style={{ display: 'block', color: '#0ea5e9', fontWeight: 600, marginTop: 4 }}><IconText name="check-check" size={14} gap={4}>Visto por</IconText></span>
