@@ -8,6 +8,7 @@ import RequirePermission from '../../../components/ui/requirePermission';
 import { SettingsHeader } from '../../../components/settings/settingsTabs';
 import { useSession } from '../../../lib/auth/sessionContext';
 import { trackEvent } from '../../../lib/activity/tracker';
+import AiLimits from '../../../components/ai/aiLimits';
 import { aiStatus, aiUsageSummary, saveAiSettings, usd } from '../../../lib/ai/api';
 
 const FEATURES = {
@@ -17,6 +18,7 @@ const FEATURES = {
   extract: 'Datos detectados',
   transcribe: 'Transcripción de llamadas',
   analytics: 'Análisis comercial',
+  ticket_triage: 'Detección de errores (tickets)',
 };
 
 export default function AiSettingsPage() {
@@ -114,6 +116,8 @@ function AiSettings() {
           {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.85rem' }}>{error}</p>}
         </form>
       </section>
+
+      {canEdit && <AiLimits status={status} onChanged={load} />}
 
       <section>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>

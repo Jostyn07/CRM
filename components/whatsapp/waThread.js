@@ -18,6 +18,7 @@ import { WA_EDIT_MINUTES, WA_MAX_BYTES, canEditWa, editMessage, getMessages, mar
 import { playSent } from '../../lib/sounds';
 import { addNote, getLeadTimeline } from '../../lib/tasks/api';
 import FileDropZone from '../ui/fileDropZone';
+import GrowTextarea from '../ui/growTextarea';
 import ImageViewer from '../chat/imageViewer';
 
 // La URL de la imagen para el visor (acepta mensajes vacíos)
@@ -484,10 +485,10 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                 e.target.value = '';
               }}
             />
-            <textarea
+            <GrowTextarea
+              storageKey="wa"
               ref={taRef}
               className="input"
-              rows={1}
               placeholder={mode === 'note' ? 'Escribe una nota para el equipo (el cliente no la verá)…' : `Escribe un mensaje a ${contactName}…`}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -504,7 +505,7 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
                   submit();
                 }
               }}
-              style={{ flex: 1, resize: 'none', minHeight: 40, maxHeight: 140 }}
+              style={{ flex: 1 }}
             />
             <button
               className={`wa-send${mode === 'note' ? ' note' : ''}`}

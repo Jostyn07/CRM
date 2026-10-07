@@ -15,6 +15,7 @@ import { useTheme } from '../../lib/theme/themeContext';
 import { useMyTaskCounts } from '../../lib/tasks/api';
 import { useChatUnread } from '../../lib/chat/api';
 import { useWaUnread } from '../../lib/whatsapp/api';
+import { useTicketBadge } from '../../lib/tickets/api';
 import { STATUSES, useMyPrefs } from '../../lib/me/workspace';
 import Icon from './icon';
 import Avatar, { initials } from './avatar';
@@ -27,6 +28,7 @@ const LINKS = [
   { href: '/llamadas', label: 'Llamadas', icon: 'phone', show: (s) => s.can('calls.view') || s.can('calls.make') },
   { href: '/whatsapp', label: 'WhatsApp', icon: 'message-circle', show: (s) => s.can('whatsapp.view'), badge: 'wa' },
   { href: '/comunicacion', label: 'Comunicación', icon: 'message-square', show: (s) => !!s.profile?.organization_id, badge: 'chat' },
+  { href: '/tickets', label: 'Tickets', icon: 'ticket', show: (s) => s.can('tickets.view') || s.can('tickets.create'), badge: 'tickets' },
   { href: '/reportes', label: 'Reportes', icon: 'chart-column', show: (s) => s.can('reports.view') },
   { href: '/clientes', label: 'Clientes', icon: 'id-card', show: (s) => s.can('clients.view') },
   { href: '/funnels', label: 'Embudos', icon: 'kanban', show: (s) => s.can('opportunities.view') },
@@ -50,6 +52,7 @@ const SETTINGS_LINKS = [
   { href: '/settings/minutos', label: 'Minutos', show: (s) => s.can('calls.manage_minutes') },
   { href: '/settings/automatizaciones', label: 'Automatizaciones', show: (s) => s.can('automations.manage') },
   { href: '/settings/ia', label: 'Inteligencia artificial', show: (s) => s.can('ai.manage') },
+  { href: '/settings/tareas-asesorias', label: 'Tareas con Asesorías', show: (s) => s.can('clients.manage', 'organization') || s.can('settings.manage', 'organization') },
   { href: '/settings/integraciones', label: 'Integraciones', show: (s) => s.can('whatsapp.manage') },
   { href: '/settings/sso', label: 'Inicio de sesión externo', show: (s) => s.can('sso.manage', 'organization') },
   { href: '/settings/organizaciones', label: 'Organizaciones', show: (s) => s.isPlatformOwner },
@@ -103,6 +106,7 @@ export default function Sidebar() {
   const taskCounts = useMyTaskCounts(orgUser);
   const chatUnread = useChatUnread(orgUser);
   const myPrefs = useMyPrefs(orgUser);
+  const ticketsMine = useTicketBadge(!!profile?.organization_id && session.can('tickets.view'));
   const waUnread = useWaUnread(profile?.organization_id && session.can('whatsapp.view') ? user?.id : null);
 
   useEffect(() => {
@@ -151,6 +155,12 @@ export default function Sidebar() {
       return (
         <span className="sb-badge wa" title={`${waUnread} mensaje(s) de WhatsApp sin leer`}>
           {waUnread > 99 ? '99+' : waUnread}
+        </span>
+      );
+    if (kind === 'tickets' && ticketsMine > 0)
+      return (
+        <span className="sb-badge" title={`${ticketsMine} ticket(s) abiertos a tu cargo`}>
+          {ticketsMine > 99 ? '99+' : ticketsMine}
         </span>
       );
     if (kind === 'chat' && chatUnread > 0)

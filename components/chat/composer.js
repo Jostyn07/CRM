@@ -9,6 +9,7 @@ import EmojiPicker from './emojiPicker';
 import StickerPicker from './stickerPicker';
 import VoiceMeter from './voiceMeter';
 import Icon from '../ui/icon';
+import GrowTextarea from '../ui/growTextarea';
 import { MAX_FILE_BYTES, fileSize, kindFromMime, previewOf } from '../../lib/chat/api';
 import { wrapSelection } from '../../lib/chat/format';
 
@@ -260,10 +261,10 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
               e.target.value = '';
             }}
           />
-          <textarea
+          <GrowTextarea
+            storageKey="chat"
             ref={taRef}
             className="input"
-            rows={1}
             placeholder={files.length ? 'Agrega un comentario (opcional)…' : 'Escribe un mensaje…'}
             value={text}
             disabled={disabled}
@@ -281,7 +282,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
                 submit();
               }
             }}
-            style={{ flex: 1, resize: 'none', minHeight: 40, maxHeight: 140 }}
+            style={{ flex: 1 }}
           />
           {text.trim() || files.length ? (
             <button type="button" className="btn btn-primary" disabled={sending || disabled} onClick={submit}>

@@ -5,7 +5,8 @@
 // (vencidas, hoy, próximos 7 días, más adelante, sin fecha) y, a la
 // derecha, resumen del periodo, calendario y próxima tarea.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '../../lib/supabase/client';
 import Modal from '../../components/ui/modal';
 import Icon from '../../components/ui/icon';
 import TaskForm from '../../components/tasks/taskForm';
@@ -14,7 +15,7 @@ import TaskRow from '../../components/tasks/taskRow';
 import { NextTask, TaskCalendar, TaskSummary } from '../../components/tasks/taskSidePanel';
 import { useSession } from '../../lib/auth/sessionContext';
 import { trackEvent, trackTab } from '../../lib/activity/tracker';
-import { groupTasks, isOpen, listTasks, notifyTasksChanged, updateTask } from '../../lib/tasks/api';
+import { getTaskById, groupTasks, isOpen, listTasks, notifyTasksChanged, updateTask } from '../../lib/tasks/api';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 
 const GROUPS = [
@@ -67,6 +68,30 @@ export default function TasksPage() {
   const { user, profile, can, scopeOf, branches } = useSession();
   const { users, userMap } = useOrgUsers();
   const teamScope = scopeOf?.('tasks.view');
+
+  // Tiempo real: cambios hechos por otros o que llegan de Asesorías
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let t = null;
+    const ch = supabase
+      .channel(`tareas-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        clearTimeout(t);
+        t = setTimeout(() => loadRef.current?.(), 500);
+      })
+      .subscribe();
+    return () => {
+      clearTimeout(t);
+      supabase.removeChannel(ch);
+    };
+  }, [user?.id]);
+
+  // Enlace directo a una tarea (/tareas?task=…), p. ej. desde un ticket
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('task');
+    if (!id) return;
+    getTaskById(id).then((t) => t && setEditing(t)).catch(() => {});
+  }, []);
   const canTeam = teamScope === 'branch' || teamScope === 'organization';
 
   const TABS = useMemo(
@@ -114,6 +139,8 @@ export default function TasksPage() {
       setError(e.message);
     }
   }, [user?.id, tab, branchId, assignee]);
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
     load();
