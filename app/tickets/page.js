@@ -93,10 +93,15 @@ function Tickets() {
     setReviewMsg(null);
     try {
       const r = await reviewTicketsNow();
+      const parts = [];
+      if (r?.batches) parts.push(`${r.batches} tanda(s) nuevas armadas`);
+      if (r?.sent_to_ai) parts.push(`${r.sent_to_ai} tanda(s) enviadas a la IA`);
       setReviewMsg(
-        r?.batches
-          ? `${r.messages} mensaje(s) en ${r.batches} tanda(s) enviados a la IA. Los resultados aparecen aquí en unos segundos.`
-          : 'Los mensajes en espera no parecen errores: quedaron revisados sin crear tickets.'
+        parts.length
+          ? `${parts.join(' y ')}. Los resultados aparecen aquí en unos segundos.`
+          : r?.queued
+            ? `Hay ${r.queued} mensaje(s) en cola, pero no se pudo llamar a la IA. Revisa los secretos project_url y webhook_secret en Vault.`
+            : 'No había mensajes pendientes.'
       );
       await load();
       setTimeout(load, 15000);
@@ -177,7 +182,17 @@ function Tickets() {
         <div className="tk-scan">
           <Icon name="sparkles" size={14} /> La IA revisa el chat interno cuando cada persona deja de escribir 5 minutos.
           <span>
-            Analizados hoy <b>{scan.analyzed}</b> · En espera <b>{scan.pending}</b>
+            Revisados hoy <b>{scan.analyzed}</b>
+            {scan.waiting > 0 && (
+              <>
+                {' '}· Esperando 5 min <b>{scan.waiting}</b>
+              </>
+            )}
+            {scan.queued > 0 && (
+              <>
+                {' '}· En cola de la IA <b>{scan.queued}</b>
+              </>
+            )}
             {scan.failed > 0 && (
               <>
                 {' '}· <b className="bad">{scan.failed}</b> para revisión manual
@@ -190,6 +205,7 @@ function Tickets() {
             </button>
           )}
           {reviewMsg && <small className="tk-scan-msg">{reviewMsg}</small>}
+          {scan.last_error && scan.queued > 0 && <small className="tk-scan-msg bad">Último error de la IA: {scan.last_error}</small>}
         </div>
       )}
 
