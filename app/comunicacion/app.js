@@ -25,6 +25,7 @@ import {
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
 import CardMenu from '../../components/ui/cardMenu';
+import ScanChatDialog from '../../components/tickets/scanChatDialog';
 import FileDropZone from '../../components/ui/fileDropZone';
 import ImageViewer from '../../components/chat/imageViewer';
 import { useTeamAvatars } from '../../lib/me/workspace';
@@ -57,7 +58,8 @@ function Avatar({ name, size = 34, group, icon, src }) {
 }
 
 export default function ComunicacionApp() {
-  const { user, profile } = useSession();
+  const { user, profile, can } = useSession();
+  const [scanConv, setScanConv] = useState(null);
   const { users, userMap } = useOrgUsers();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -717,6 +719,7 @@ export default function ComunicacionApp() {
                       conv.read_later
                         ? { label: 'Quitar de leer más tarde', onClick: () => handleReadLater(conv, false) }
                         : { label: 'Marcar para leer más tarde', onClick: () => handleReadLater(conv, true) },
+                      ...(can?.('tickets.scan_chat') && !isNotes ? [{ label: 'Revisar chat completo con IA (tickets)', onClick: () => setScanConv(conv) }] : []),
                       { label: 'Borrar chat', danger: true, onClick: () => handleClearChat(conv) },
                     ]}
                   />
@@ -857,6 +860,7 @@ export default function ComunicacionApp() {
           loadConversations();
         }}
       />
+      {scanConv && <ScanChatDialog conversationId={scanConv.conversation_id} onClose={() => setScanConv(null)} />}
       <ProfileCard
         userId={profileUser}
         fallbackName={userMap[profileUser]?.name}
