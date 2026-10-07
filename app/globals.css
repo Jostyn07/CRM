@@ -2666,3 +2666,8 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 /* Botón de enlace dentro de un mensaje (avisos de tickets) */
 .msg-link-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; text-decoration: none; color: var(--accent-strong, var(--accent)); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
 .msg-link-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Nada dentro del detalle del ticket se sale de la caja */
+.tk-detail { overflow-x: hidden; }
+.tk-detail img, .tk-detail video { max-width: 100%; height: auto; }
+.tk-shot img { height: 100% !important; }
+.tk-desc, .tk-timeline p, .tk-occs p, .tk-manual pre { overflow-wrap: anywhere; }

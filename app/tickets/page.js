@@ -506,11 +506,17 @@ function TicketDetail({ id, can, users, userMap, allTickets, onClose, onChanged 
       {d.attachments?.length > 0 && (
         <section className="tk-d-section">
           <h4>Capturas ({d.attachments.length})</h4>
-          <div className="tk-shots">
+          <div className="tk-shots" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 160px))', gap: 8 }}>
             {d.attachments.map((a) =>
               a.url && /^image\//.test(a.mime || '') ? (
-                <button key={a.id} className="tk-shot" onClick={() => setPhoto({ src: a.url, title: `${a.name || 'Captura'} · ${name(a.uploaded_by)}` })}>
-                  <img src={a.url} alt={a.name || 'Captura'} loading="lazy" />
+                <button
+                  key={a.id}
+                  className="tk-shot"
+                  style={{ padding: 0, aspectRatio: '4 / 3', overflow: 'hidden', width: '100%', maxWidth: 160 }}
+                  onClick={() => setPhoto({ src: a.url, title: `${a.name || 'Captura'} · ${name(a.uploaded_by)}` })}
+                  title="Ver en grande"
+                >
+                  <img src={a.url} alt={a.name || 'Captura'} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 </button>
               ) : (
                 <a key={a.id} className="tk-file" href={a.url || '#'} target="_blank" rel="noopener noreferrer">
