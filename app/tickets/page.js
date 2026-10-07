@@ -16,7 +16,7 @@ import ReportDialog from '../../components/tickets/reportDialog';
 import { PhotoViewer } from '../../components/me/profileCard';
 import {
   CATEGORIES, OPEN_STATES, PRIORITY, SOURCE, STATUS, commentTicket, deleteTicket, getTicketDetail, getTicketSettings,
-  listTickets, manualQueue, manualResolve, mergeTicket, nextActions, saveTicketSettings, scanStats, setStatus, ticketsSummary, timeAgo, updateTicket,
+  listTickets, manualQueue, reviewTicketsNow, manualResolve, mergeTicket, nextActions, saveTicketSettings, scanStats, setStatus, ticketsSummary, timeAgo, updateTicket,
   useTicketsRealtime,
 } from '../../lib/tickets/api';
 
@@ -69,6 +69,8 @@ function Tickets() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState(null);
   const [manual, setManual] = useState([]);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewMsg, setReviewMsg] = useState(null);
   const [scan, setScan] = useState(null);
 
   const load = useCallback(async () => {
@@ -85,6 +87,25 @@ function Tickets() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function reviewNow() {
+    setReviewing(true);
+    setReviewMsg(null);
+    try {
+      const r = await reviewTicketsNow();
+      setReviewMsg(
+        r?.batches
+          ? `${r.messages} mensaje(s) en ${r.batches} tanda(s) enviados a la IA. Los resultados aparecen aquí en unos segundos.`
+          : 'Los mensajes en espera no parecen errores: quedaron revisados sin crear tickets.'
+      );
+      await load();
+      setTimeout(load, 15000);
+    } catch (e) {
+      setReviewMsg(e.message);
+    } finally {
+      setReviewing(false);
+    }
+  }
   useTicketsRealtime(load);
 
   useEffect(() => {
@@ -153,7 +174,7 @@ function Tickets() {
       </section>
 
       {scan && (
-        <p className="tk-scan">
+        <div className="tk-scan">
           <Icon name="sparkles" size={14} /> La IA revisa el chat interno cuando cada persona deja de escribir 5 minutos.
           <span>
             Analizados hoy <b>{scan.analyzed}</b> · En espera <b>{scan.pending}</b>
@@ -163,7 +184,13 @@ function Tickets() {
               </>
             )}
           </span>
-        </p>
+          {(can.work || can.manage) && (
+            <button className="btn btn-secondary tk-scan-btn" disabled={reviewing || !scan.pending} onClick={reviewNow} title="Manda a la IA ya mismo los mensajes en espera, sin esperar los 5 minutos">
+              <IconText name="refresh-cw" size={14}>{reviewing ? 'Revisando…' : 'Revisar ahora'}</IconText>
+            </button>
+          )}
+          {reviewMsg && <small className="tk-scan-msg">{reviewMsg}</small>}
+        </div>
       )}
 
       {can.work && manual.length > 0 && (
