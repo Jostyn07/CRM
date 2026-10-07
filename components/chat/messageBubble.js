@@ -240,6 +240,11 @@ export default function MessageBubble({
             </div>
           )
         )}
+        {m.link && !deleted && /^\/[a-z]/.test(m.link) && (
+          <a className="msg-link-btn" href={m.link}>
+            <Icon name="ticket" size={14} /> {m.link_label || 'Abrir'}
+          </a>
+        )}
 
         <div
           style={{

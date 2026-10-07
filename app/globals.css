@@ -2662,3 +2662,7 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 .tk-scan-btn { height: 30px; padding: 0 10px; font-size: 0.78rem; }
 .tk-scan-msg { flex-basis: 100%; text-align: right; color: var(--color-text-muted); font-size: 0.76rem; }
 .tk-scan-msg.bad { color: var(--color-danger); }
+
+/* Botón de enlace dentro de un mensaje (avisos de tickets) */
+.msg-link-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; text-decoration: none; color: var(--accent-strong, var(--accent)); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.msg-link-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
