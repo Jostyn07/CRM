@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { trackEvent } from '../../lib/activity/tracker';
+import ImageCropper from '../ui/imageCropper';
 import Icon from '../ui/icon';
 import { initials } from '../ui/avatar';
 
@@ -17,7 +18,8 @@ export default function OrgLogoCard() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState(null);
-  const canEdit = can('settings.manage', 'organization') || isPlatformOwner;
+  const [cropFile, setCropFile] = useState(null);
+  const canEdit = can('org.logo') || can('settings.manage', 'organization') || isPlatformOwner;
   if (!organization || !canEdit) return null;
 
   async function upload(file) {
@@ -56,6 +58,21 @@ export default function OrgLogoCard() {
 
   return (
     <div className="card">
+      {cropFile && (
+        <ImageCropper
+          file={cropFile}
+          aspect={1}
+          round
+          outWidth={512}
+          outType="image/png"
+          title="Ajustar logo"
+          onCancel={() => setCropFile(null)}
+          onDone={async (f) => {
+            setCropFile(null);
+            await upload(f);
+          }}
+        />
+      )}
       <h3 style={{ fontSize: '0.95rem', marginBottom: '0.7rem' }}>Logo de la organización</h3>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <span className="sb-logo-ring" style={{ width: 88, height: 88, flexShrink: 0 }}>
@@ -67,7 +84,16 @@ export default function OrgLogoCard() {
             <label className="btn btn-primary" style={{ cursor: busy ? 'wait' : 'pointer' }}>
               <Icon name="upload" size={15} />
               {busy ? 'Subiendo…' : organization.logo_url ? 'Cambiar logo' : 'Subir logo'}
-              <input type="file" accept={TYPES.join(',')} hidden disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+              <input type="file" accept={TYPES.join(',')} hidden disabled={busy} onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
+                  // El SVG se sube tal cual (no se recorta); las demás imágenes se ajustan primero
+                  if (f.type === 'image/svg+xml') upload(f);
+                  else if (TYPES.includes(f.type)) setCropFile(f);
+                  else setError('Usa una imagen PNG, JPG, WEBP o SVG.');
+                }}
+              />
             </label>
             {organization.logo_url && (
               <button type="button" className="btn btn-secondary" disabled={busy} onClick={remove}>

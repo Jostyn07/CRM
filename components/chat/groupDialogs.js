@@ -8,6 +8,7 @@ import Modal from '../ui/modal';
 import { addMembers, createGroup, groupMembers, removeMember, renameGroup, setGroupPhoto, setMemberRole } from '../../lib/chat/api';
 import { uploadProfileMedia } from '../../lib/me/workspace';
 import Icon from '../ui/icon';
+import ImageCropper from '../ui/imageCropper';
 import { getAvatarColors, getInitials } from '../leads/avatarColor';
 
 function Avatar({ name, size = 28 }) {
@@ -104,6 +105,7 @@ export function GroupInfoDialog({ open, onClose, conversation, users, userMap, m
   const [toAdd, setToAdd] = useState([]);
   const [title, setTitle] = useState('');
   const [error, setError] = useState(null);
+  const [cropFile, setCropFile] = useState(null);
 
   const load = useCallback(async () => {
     if (!conversation) return;
@@ -142,6 +144,20 @@ export function GroupInfoDialog({ open, onClose, conversation, users, userMap, m
   return (
     <Modal open={open} onClose={onClose} title="Información del grupo" width={500}>
       <div style={{ display: 'grid', gap: '1rem' }}>
+        {cropFile && (
+          <ImageCropper
+            file={cropFile}
+            aspect={1}
+            round
+            outWidth={600}
+            title="Ajustar foto del grupo"
+            onCancel={() => setCropFile(null)}
+            onDone={(f) => {
+              setCropFile(null);
+              return run(async () => setGroupPhoto(convId, await uploadProfileMedia(me, f, `grupo-${convId}`)));
+            }}
+          />
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {conversation.photo_url ? (
             <img src={conversation.photo_url} alt="" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
@@ -161,7 +177,7 @@ export function GroupInfoDialog({ open, onClose, conversation, users, userMap, m
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     e.target.value = '';
-                    if (file) run(async () => setGroupPhoto(convId, await uploadProfileMedia(me, file, `grupo-${convId}`)));
+                    if (file) setCropFile(file);
                   }}
                 />
               </label>

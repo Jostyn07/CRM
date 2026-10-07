@@ -18,6 +18,7 @@ import { ACCENTS, BACKGROUNDS, DASHBOARD_WIDGETS, SHORTCUTS, STATUSES, applyAcce
 import { clientId, listMyAccess, mfaStatus } from '../../lib/me/access';
 import OrgLogoCard from '../../components/settings/orgLogoCard';
 import AccessTable from '../../components/me/accessTable';
+import ImageCropper from '../../components/ui/imageCropper';
 import Icon, { IconText } from '../../components/ui/icon';
 
 const SCOPE_LABEL = { own: 'Propio', branch: 'Sucursal', organization: 'Organización' };
@@ -594,8 +595,14 @@ function SecuritySection({ user, can }) {
 // ---------------- Foto de perfil y portada
 function PhotosSection({ user, prefs, name }) {
   const { run, busy, view } = useSaver();
-  async function pick(kind, file) {
+  const [crop, setCrop] = useState(null); // { kind, file } mientras se ajusta
+  function pick(kind, file) {
     if (!file) return;
+    if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) return run(async () => { throw new Error('Usa una imagen PNG, JPG, WEBP o GIF.'); });
+    setCrop({ kind, file });
+  }
+  async function upload(kind, file) {
+    setCrop(null);
     await run(async () => {
       const url = await uploadProfileMedia(user.id, file, kind);
       await saveMyPrefs({ prefs: { [`${kind}_url`]: url } });
@@ -603,14 +610,25 @@ function PhotosSection({ user, prefs, name }) {
   }
   const remove = (kind) => run(() => saveMyPrefs({ prefs: { [`${kind}_url`]: null } }), 'Imagen quitada.');
   return (
-    <Card title="Foto y portada" sub="PNG, JPG, WEBP o GIF de hasta 5 MB. Tus compañeros verán tu foto." footer={view}>
+    <Card title="Foto y portada" sub="PNG, JPG, WEBP o GIF. Antes de guardar podrás ubicar y recortar la imagen." footer={view}>
+      {crop && (
+        <ImageCropper
+          file={crop.file}
+          aspect={crop.kind === 'cover' ? 3 : 1}
+          round={crop.kind === 'avatar'}
+          outWidth={crop.kind === 'cover' ? 1500 : 600}
+          title={crop.kind === 'cover' ? 'Ajustar portada' : 'Ajustar foto de perfil'}
+          onCancel={() => setCrop(null)}
+          onDone={(f) => upload(crop.kind, f)}
+        />
+      )}
       <div className="me-photos">
         <div className="me-photo">
           <span className="me-photo-avatar">{prefs?.prefs?.avatar_url ? <img src={prefs.prefs.avatar_url} alt="" /> : initials(name)}</span>
           <div className="me-photo-actions">
             <label className={`btn btn-secondary${busy ? ' disabled' : ''}`}>
               <IconText name="camera" size={15}>Cambiar foto</IconText>
-              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => pick('avatar', e.target.files?.[0])} />
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { pick('avatar', e.target.files?.[0]); e.target.value = ''; }} />
             </label>
             {prefs?.prefs?.avatar_url && (
               <button type="button" className="btn btn-secondary" onClick={() => remove('avatar')}>
@@ -624,7 +642,7 @@ function PhotosSection({ user, prefs, name }) {
           <div className="me-photo-actions">
             <label className={`btn btn-secondary${busy ? ' disabled' : ''}`}>
               <IconText name="image" size={15}>Cambiar portada</IconText>
-              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => pick('cover', e.target.files?.[0])} />
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { pick('cover', e.target.files?.[0]); e.target.value = ''; }} />
             </label>
             {prefs?.prefs?.cover_url && (
               <button type="button" className="btn btn-secondary" onClick={() => remove('cover')}>
