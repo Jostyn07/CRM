@@ -824,6 +824,7 @@ function SettingsDialog({ users, onClose }) {
       const r = await saveTicketSettings({
         ai_detect: s.ai_detect,
         default_assignee: s.default_assignee || null,
+        monitor_user: s.monitor_user || null,
         create_task: s.create_task,
         approval_on_critical: s.approval_on_critical,
         approval_categories: s.approval_categories ?? [],
@@ -850,6 +851,18 @@ function SettingsDialog({ users, onClose }) {
               <b>Detectar errores en el chat interno con IA</b>
               <small>Un filtro sin costo descarta los mensajes que no hablan de fallas; solo los sospechosos pasan a la IA. Usa el presupuesto de IA de la organización.</small>
             </span>
+          </label>
+          <label className="tk-label">
+            Revisar los chats de
+            <select className="input" value={s.monitor_user ?? ''} onChange={(e) => set('monitor_user', e.target.value)}>
+              <option value="">Igual que el responsable por defecto</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <small className="tk-muted">La IA solo lee lo que le escriben a esta persona y los grupos donde está. Sus propios mensajes no cuentan como reporte.</small>
           </label>
           <label className="tk-label">
             Responsable por defecto de los tickets nuevos
