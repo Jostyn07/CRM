@@ -21,6 +21,9 @@ import ForwardDialog from '../../components/chat/forwardDialog';
 import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, hora, useSignedUrl, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
   clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setPinned, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  getPinned,
+  pinMessage,
+  searchMessages,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
@@ -80,6 +83,13 @@ export default function ComunicacionApp() {
   const [reads, setReads] = useState({}); // id → [{user_id, read_at}]
   const [members, setMembers] = useState([]); // [{user_id, joined_at}]
   const [hasMore, setHasMore] = useState(false);
+  const [pinnedMsgs, setPinnedMsgs] = useState([]);
+  const [pinIdx, setPinIdx] = useState(0);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQ, setFindQ] = useState('');
+  const [findHits, setFindHits] = useState(null);
+  const [msgHits, setMsgHits] = useState([]);
+  const pendingJump = useRef(null);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('all');
   const searchRef = useRef(null);
@@ -183,6 +193,10 @@ export default function ComunicacionApp() {
       setReads({});
       setMembers([]);
       setExtraRefs({});
+      setPinnedMsgs([]);
+      setFindOpen(false);
+      setFindQ('');
+      setFindHits(null);
       stickToBottom.current = true;
       window.__chatOpenConversation = id;
       const url = new URL(window.location.href);
@@ -198,6 +212,7 @@ export default function ComunicacionApp() {
         loadReactions(msgs.map((m) => m.id));
         loadReads(msgs);
         loadMembers(id);
+        getPinned(id).then((p) => window.__chatOpenConversation === id && (setPinnedMsgs(p), setPinIdx(0))).catch(() => setPinnedMsgs([]));
         ensureRefs(msgs);
         await markRead(id);
         loadConversations();
@@ -251,6 +266,11 @@ export default function ComunicacionApp() {
           return { ...prev, [r.message_id]: [...prev[r.message_id], r] };
         });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_pinned_messages' }, (payload) => {
+        const cid = payload.new?.conversation_id ?? payload.old?.conversation_id;
+        const open = window.__chatOpenConversation;
+        if (open && (!cid || cid === open)) getPinned(open).then((p) => window.__chatOpenConversation === open && setPinnedMsgs(p)).catch(() => {});
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reactions' }, (payload) => {
         const id = payload.new?.message_id ?? payload.old?.message_id;
         if (id) loadReactions([id]);
@@ -276,6 +296,41 @@ export default function ComunicacionApp() {
   useEffect(() => {
     if (stickToBottom.current) endRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length, selectedId]);
+
+  // Resultado del buscador de chats: al abrir la conversación, ir al mensaje
+  useEffect(() => {
+    const pj = pendingJump.current;
+    if (!pj || pj.conv !== selectedId || !messages.length) return;
+    pendingJump.current = null;
+    setTimeout(() => jumpToMessage(pj.id), 150);
+  }, [messages.length, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Buscador dentro del chat
+  useEffect(() => {
+    if (!findOpen || !selectedId) return undefined;
+    const q = findQ.trim();
+    if (q.length < 2) {
+      setFindHits(null);
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      searchMessages(q, selectedId, 100).then(setFindHits).catch((e) => setError(e.message));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [findQ, findOpen, selectedId]);
+
+  // Buscador de chats: también busca palabras dentro de los mensajes
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 3) {
+      setMsgHits([]);
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      searchMessages(q, null, 30).then(setMsgHits).catch(() => setMsgHits([]));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   // Si me sacaron del grupo abierto, cerrarlo
   useEffect(() => {
@@ -472,9 +527,64 @@ export default function ComunicacionApp() {
 
   function jumpTo(id) {
     const el = document.getElementById(`msg-${id}`);
-    if (!el) return;
+    if (!el) return false;
+    stickToBottom.current = false;
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    el.animate?.([{ opacity: 0.4 }, { opacity: 1 }], { duration: 900 });
+    el.animate?.([{ opacity: 0.35, transform: 'scale(0.98)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 900 });
+    return true;
+  }
+
+  // Lleva a un mensaje aunque todavía no esté cargado (carga hacia atrás hasta encontrarlo)
+  async function jumpToMessage(id) {
+    if (jumpTo(id)) return;
+    const convId = window.__chatOpenConversation;
+    if (!convId) return;
+    const clearedAt = convsRef.current.find((x) => x.conversation_id === convId)?.cleared_at;
+    let before = messages[0]?.created_at;
+    let acc = [];
+    let more = hasMore;
+    let found = false;
+    try {
+      for (let i = 0; i < 20 && before && more; i++) {
+        const page = await getMessages(convId, { before, after: clearedAt || undefined, limit: 100 });
+        if (window.__chatOpenConversation !== convId) return;
+        acc = [...page, ...acc];
+        more = page.hasMore;
+        if (page.some((x) => x.id === id)) {
+          found = true;
+          break;
+        }
+        before = page[0]?.created_at;
+      }
+    } catch (e) {
+      setError(e.message);
+      return;
+    }
+    if (acc.length) {
+      stickToBottom.current = false;
+      setHasMore(more);
+      setMessages((prev) => [...acc.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
+      loadReactions(acc.map((x) => x.id));
+      loadReads(acc);
+      ensureRefs(acc);
+    }
+    if (!found) {
+      setToast('Ese mensaje es muy antiguo o ya no está disponible');
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    setTimeout(() => jumpTo(id), 120);
+  }
+
+  async function handlePinMessage(m, on) {
+    try {
+      await pinMessage(m.id, on);
+      const p = await getPinned(m.conversation_id);
+      setPinnedMsgs(p);
+      setPinIdx(0);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   async function enableNotifications() {
@@ -496,6 +606,10 @@ export default function ComunicacionApp() {
   const results = useMemo(
     () => (q ? users.filter((u) => u.id !== me && `${u.name} ${u.email}`.toLowerCase().includes(q)).slice(0, 8) : []),
     [q, users, me]
+  );
+  const convMatches = useMemo(
+    () => (q.length >= 2 && conversations ? conversations.filter((c) => c.kind !== 'notes' && String(nameOf(c) || '').toLowerCase().includes(q)).slice(0, 6) : []),
+    [q, conversations, userMap] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const byId = useMemo(() => ({ ...extraRefs, ...Object.fromEntries(messages.map((m) => [m.id, m])) }), [messages, extraRefs]);
 
@@ -597,7 +711,47 @@ export default function ComunicacionApp() {
                 ))}
               </div>
             )}
-            {q && results.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
+            {q && results.length === 0 && msgHits.length === 0 && convMatches.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
+            {(convMatches.length > 0 || msgHits.length > 0) && (
+              <div className="card cm-results cm-msg-results">
+                {convMatches.length > 0 && <div className="cm-results-title">Chats</div>}
+                {convMatches.map((c) => (
+                  <button key={c.conversation_id} className="cm-result" onClick={() => { setSearch(''); openConversation(c.conversation_id); }}>
+                    <Avatar name={nameOf(c)} size={26} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
+                    <span>{nameOf(c)}</span>
+                  </button>
+                ))}
+                {msgHits.length > 0 && <div className="cm-results-title">Mensajes</div>}
+                {msgHits.map((h) => {
+                  const c = conversations?.find((x) => x.conversation_id === h.conversation_id);
+                  return (
+                    <button
+                      key={h.message_id}
+                      className="cm-result cm-msg-hit"
+                      onClick={() => {
+                        setSearch('');
+                        if (h.conversation_id === selectedId) {
+                          jumpToMessage(h.message_id);
+                        } else {
+                          pendingJump.current = { conv: h.conversation_id, id: h.message_id };
+                          openConversation(h.conversation_id);
+                        }
+                      }}
+                    >
+                      <span className="cm-msg-hit-top">
+                        <strong>{c ? nameOf(c) : 'Chat'}</strong>
+                        <small>{fechaCorta(h.created_at)}</small>
+                      </span>
+                      <span className="cm-msg-hit-text">
+                        {(userMap[h.sender_id]?.name ?? '').split(' ')[0]}
+                        {h.sender_id ? ': ' : ''}
+                        <Highlight text={h.body} q={search.trim()} />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="cm-tabs" role="tablist">
               {[
                 ['all', 'Todos'],
@@ -711,6 +865,19 @@ export default function ComunicacionApp() {
                   </button>
                 )}
                 {conv && (
+                  <button
+                    className={`cm-find-btn${findOpen ? ' on' : ''}`}
+                    title="Buscar en este chat"
+                    onClick={() => {
+                      setFindOpen((v) => !v);
+                      setFindQ('');
+                      setFindHits(null);
+                    }}
+                  >
+                    <Icon name="search" size={17} />
+                  </button>
+                )}
+                {conv && (
                   <CardMenu
                     items={[
                       conv.pinned_at
@@ -726,6 +893,39 @@ export default function ComunicacionApp() {
                 )}
               </div>
 
+              {findOpen && (
+                <div className="cm-find">
+                  <div className="cm-find-input">
+                    <Icon name="search" size={15} />
+                    <input autoFocus placeholder="Buscar palabras en este chat…" value={findQ} onChange={(e) => setFindQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setFindOpen(false)} />
+                    {findHits && <small>{findHits.length === 100 ? '100+' : findHits.length} resultado(s)</small>}
+                    <button className="cm-find-x" onClick={() => setFindOpen(false)} title="Cerrar">
+                      <Icon name="x" size={15} />
+                    </button>
+                  </div>
+                  {findHits && findHits.length > 0 && (
+                    <ul className="cm-find-list">
+                      {findHits.map((h) => (
+                        <li key={h.message_id}>
+                          <button onClick={() => jumpToMessage(h.message_id)}>
+                            <span className="cm-msg-hit-top">
+                              <strong>{h.sender_id === me ? 'Tú' : userMap[h.sender_id]?.name ?? 'Usuario'}</strong>
+                              <small>
+                                {fechaCorta(h.created_at) === hora(h.created_at) ? hora(h.created_at) : `${fechaCorta(h.created_at)} · ${hora(h.created_at)}`}
+                              </small>
+                            </span>
+                            <span className="cm-msg-hit-text">
+                              <Highlight text={h.body} q={findQ.trim()} />
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {findHits && findHits.length === 0 && <p className="cm-muted" style={{ margin: '6px 4px' }}>No hay mensajes con esas palabras.</p>}
+                </div>
+              )}
+
               <div
                 style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.8rem 1.4rem', display: 'flex', flexDirection: 'column', gap: 6 }}
                 ref={listRef}
@@ -737,6 +937,39 @@ export default function ComunicacionApp() {
                   if (el.scrollTop < 60 && hasMore) loadOlder();
                 }}
               >
+                {pinnedMsgs.length > 0 && (
+                  <div className="cm-pinned">
+                    <button
+                      className="cm-pinned-main"
+                      title="Ir al mensaje fijado"
+                      onClick={() => {
+                        const pm = pinnedMsgs[pinIdx % pinnedMsgs.length];
+                        jumpToMessage(pm.message_id);
+                        setPinIdx((x) => (x + 1) % pinnedMsgs.length);
+                      }}
+                    >
+                      <Icon name="pin" size={14} />
+                      <span className="cm-pinned-bars" aria-hidden="true">
+                        {pinnedMsgs.map((_, i) => (
+                          <i key={i} className={i === pinIdx % pinnedMsgs.length ? 'on' : ''} />
+                        ))}
+                      </span>
+                      <span className="cm-pinned-text">
+                        <small>
+                          Mensaje fijado{pinnedMsgs.length > 1 ? ` ${(pinIdx % pinnedMsgs.length) + 1} de ${pinnedMsgs.length}` : ''} ·{' '}
+                          {userMap[pinnedMsgs[pinIdx % pinnedMsgs.length].sender_id]?.name ?? 'Usuario'}
+                        </small>
+                        <span>
+                          {pinnedMsgs[pinIdx % pinnedMsgs.length].body ||
+                            `[${pinnedMsgs[pinIdx % pinnedMsgs.length].attachment_name || pinnedMsgs[pinIdx % pinnedMsgs.length].kind}]`}
+                        </span>
+                      </span>
+                    </button>
+                    <button className="cm-pinned-x" title="Desfijar" onClick={() => handlePinMessage({ id: pinnedMsgs[pinIdx % pinnedMsgs.length].message_id, conversation_id: selectedId }, false)}>
+                      <Icon name="x" size={14} />
+                    </button>
+                  </div>
+                )}
                 {hasMore && (
                   <button className="btn btn-secondary" style={{ alignSelf: 'center', marginBottom: 8 }} onClick={loadOlder}>
                     Ver mensajes anteriores
@@ -786,7 +1019,9 @@ export default function ComunicacionApp() {
                               }
                             : null
                         }
-                        onJumpTo={jumpTo}
+                        onJumpTo={jumpToMessage}
+                        pinned={pinnedMsgs.some((p) => p.message_id === m.id)}
+                        onPin={isNotes ? undefined : handlePinMessage}
                         onOpenImage={(m) => setLightbox(m.id)}
                       />
                     </div>
@@ -893,4 +1128,31 @@ export default function ComunicacionApp() {
       )}
     </main>
   );
+}
+
+// Resalta las palabras buscadas dentro de un texto
+function Highlight({ text, q }) {
+  const t = String(text || '');
+  const needle = String(q || '').trim();
+  if (needle.length < 2) return t;
+  const parts = [];
+  const lower = t.toLowerCase();
+  const n = needle.toLowerCase();
+  let i = 0;
+  let k = lower.indexOf(n);
+  // Muestra el texto alrededor de la primera coincidencia
+  let startAt = 0;
+  if (k > 60) {
+    startAt = k - 40;
+    parts.push('…');
+  }
+  i = startAt;
+  while (k !== -1 && parts.length < 40) {
+    if (k > i) parts.push(t.slice(i, k));
+    parts.push(<mark key={k}>{t.slice(k, k + n.length)}</mark>);
+    i = k + n.length;
+    k = lower.indexOf(n, i);
+  }
+  parts.push(t.slice(i));
+  return <>{parts}</>;
 }

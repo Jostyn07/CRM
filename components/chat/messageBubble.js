@@ -91,6 +91,8 @@ export default function MessageBubble({
   readInfo,
   onJumpTo,
   onOpenImage,
+  pinned,
+  onPin,
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -330,6 +332,11 @@ export default function MessageBubble({
             <button type="button" title="Responder" onClick={() => onReply?.(m)} style={actionBtn}>
               <Icon name="reply" size={16} />
             </button>
+            {onPin && !deleted && (
+              <button type="button" title={pinned ? 'Desfijar mensaje' : 'Fijar mensaje arriba del chat'} onClick={() => onPin(m, !pinned)} style={actionBtn}>
+                <Icon name="pin" size={15} style={pinned ? { color: 'var(--accent)' } : undefined} />
+              </button>
+            )}
             {onForward && m.kind !== 'system' && m.kind !== 'sticker' && (
               <button type="button" title="Reenviar" onClick={() => onForward(m)} style={actionBtn}>
                 <Icon name="forward" size={16} />
