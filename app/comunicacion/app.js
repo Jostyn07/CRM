@@ -608,7 +608,12 @@ export default function ComunicacionApp() {
     [q, users, me]
   );
   const convMatches = useMemo(
-    () => (q.length >= 2 && conversations ? conversations.filter((c) => c.kind !== 'notes' && String(nameOf(c) || '').toLowerCase().includes(q)).slice(0, 6) : []),
+    () =>
+      q.length >= 2 && conversations
+        ? conversations
+            .filter((c) => c.kind === 'group' && String(nameOf(c) || '').toLowerCase().includes(q))
+            .slice(0, 6)
+        : [],
     [q, conversations, userMap] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const byId = useMemo(() => ({ ...extraRefs, ...Object.fromEntries(messages.map((m) => [m.id, m])) }), [messages, extraRefs]);
@@ -701,20 +706,17 @@ export default function ComunicacionApp() {
               <Icon name="search" size={16} />
               <input ref={searchRef} placeholder="Buscar compañero para escribirle…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
-            {results.length > 0 && (
-              <div className="card cm-results">
+            {q && results.length === 0 && msgHits.length === 0 && convMatches.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
+            {(results.length > 0 || convMatches.length > 0 || msgHits.length > 0) && (
+              <div className="card cm-results cm-msg-results">
+                {results.length > 0 && <div className="cm-results-title">Personas</div>}
                 {results.map((u) => (
                   <button key={u.id} onClick={() => startWith(u.id)} className="cm-result">
                     <Avatar name={u.name} size={26} src={avatars[u.id]} />
                     <span>{u.name}</span>
                   </button>
                 ))}
-              </div>
-            )}
-            {q && results.length === 0 && msgHits.length === 0 && convMatches.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
-            {(convMatches.length > 0 || msgHits.length > 0) && (
-              <div className="card cm-results cm-msg-results">
-                {convMatches.length > 0 && <div className="cm-results-title">Chats</div>}
+                {convMatches.length > 0 && <div className="cm-results-title">Grupos</div>}
                 {convMatches.map((c) => (
                   <button key={c.conversation_id} className="cm-result" onClick={() => { setSearch(''); openConversation(c.conversation_id); }}>
                     <Avatar name={nameOf(c)} size={26} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
