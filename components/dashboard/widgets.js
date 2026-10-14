@@ -15,44 +15,69 @@ import { taskKind } from '../tasks/taskRow';
 
 // ---------------------------------------------------------------- Encabezado
 const QUOTES = [
-  'La disciplina de hoy construye los resultados de mañana.',
-  'Cada conversación es una oportunidad de ayudar.',
-  'Lo que se mide, se mejora.',
-  'El seguimiento convierte el interés en clientes.',
-  'Pequeños avances diarios, grandes resultados.',
+  'Un café caliente y una buena canción arreglan más de lo que parece.',
+  'La luna que ves esta noche también la ve alguien que te extraña.',
+  'Hay olores que nos devuelven a casa en un segundo.',
+  'Descansar también es avanzar.',
+  'Lo que heredamos de los abuelos casi nunca cabe en una maleta.',
 ];
 
-// Frase del día escrita por la IA (una por día, hora de Bogotá). Mientras
-// carga, o si la IA no responde, se usa una frase fija.
+// Frase escrita por la IA: cambia cada hora (hora de Bogotá) y todos ven la
+// misma. Mientras carga, o si la IA no responde, se usa una frase fija.
+function slotBogota() {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date())
+      .map((x) => [x.type, x.value])
+  );
+  return `${p.year}-${p.month}-${p.day} ${String(Number(p.hour) % 24).padStart(2, '0')}`;
+}
+
 function useFraseDelDia() {
   const fija = QUOTES[new Date().getDate() % QUOTES.length];
-  const [frase, setFrase] = useState({ message: fija, topic: null, day: null });
+  const [frase, setFrase] = useState({ message: fija, topic: null, slot: null });
+  const [slot, setSlot] = useState(slotBogota);
+
+  // Al cambiar la hora se pide la frase nueva
+  useEffect(() => {
+    const id = setInterval(() => {
+      const s = slotBogota();
+      setSlot((prev) => (prev === s ? prev : s));
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     let vivo = true;
-    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
-    const KEY = `xiris.frase.${day}`;
+    const KEY = `xiris.frase.${slot}`;
     try {
       const guardada = JSON.parse(sessionStorage.getItem(KEY) || 'null');
-      if (guardada?.message) return setFrase({ ...guardada, day });
+      if (guardada?.message) {
+        setFrase({ ...guardada, slot });
+        return undefined;
+      }
     } catch {}
     (async () => {
-      let { data } = await supabase.from('daily_messages').select('message, topic').eq('day', day).maybeSingle();
+      let { data } = await supabase.from('daily_messages').select('slot, message, topic').eq('slot', slot).maybeSingle();
       if (!data) {
         const r = await supabase.functions.invoke('frase-del-dia', { body: {} });
         if (!r.error && r.data?.message) data = r.data;
       }
       if (vivo && data?.message) {
         const f = { message: data.message, topic: data.topic ?? null };
-        setFrase({ ...f, day });
-        try {
-          sessionStorage.setItem(KEY, JSON.stringify(f));
-        } catch {}
+        const real = data.slot ?? slot;
+        setFrase({ ...f, slot: real });
+        if (real === slot) {
+          try {
+            sessionStorage.setItem(KEY, JSON.stringify(f));
+          } catch {}
+        }
       }
     })().catch(() => {});
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [slot]);
   return frase;
 }
 
@@ -63,24 +88,25 @@ const REACCIONES = [
   { key: 'dislike', icon: 'thumbs-down', label: 'No me gusta' },
 ];
 
-function ReaccionesFrase({ day }) {
+function ReaccionesFrase({ slot }) {
   const [sum, setSum] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (!day) return;
-    supabase.rpc('daily_message_summary', { p_day: day }).then(({ data }) => data && setSum(data));
-  }, [day]);
-  if (!day || !sum) return null;
+    setSum(null);
+    if (!slot) return;
+    supabase.rpc('daily_message_summary', { p_slot: slot }).then(({ data }) => data && setSum(data));
+  }, [slot]);
+  if (!slot || !sum) return null;
   async function react(key) {
     if (busy) return;
     setBusy(true);
     const next = sum.mine === key ? null : key;
-    const { data } = await supabase.rpc('daily_message_react', { p_day: day, p_reaction: next });
+    const { data } = await supabase.rpc('daily_message_react', { p_slot: slot, p_reaction: next });
     if (data) setSum(data);
     setBusy(false);
   }
   return (
-    <div className="dash-quote-react" role="group" aria-label="Reaccionar a la frase del día">
+    <div className="dash-quote-react" role="group" aria-label="Reaccionar a la frase">
       {REACCIONES.map((r) => {
         const on = sum.mine === r.key;
         const n = Number(sum[r.key]) || 0;
@@ -112,7 +138,7 @@ export function Hero({ name, right }) {
       <blockquote className="dash-quote">
         <Icon name="sparkles" size={16} style={{ color: 'var(--color-primary)', marginBottom: 6 }} />
         <span title={frase.topic ? `Inspirada en: ${frase.topic}` : undefined}>“{quote}”</span>
-        <ReaccionesFrase day={frase.day} />
+        <ReaccionesFrase slot={frase.slot} />
       </blockquote>
     </section>
   );
