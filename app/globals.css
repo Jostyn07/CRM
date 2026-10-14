@@ -2709,3 +2709,145 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 .cm-msg-hit-text mark, .cm-find-list mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--color-text); border-radius: 3px; padding: 0 1px; }
 .cm-msg-results { max-height: 340px; overflow-y: auto; }
 .cm-results-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); padding: 6px 10px 2px; }
+
+/* ============================================================
+   TEMA OSCURO — Sistema visual oscuro (Figma: "Xiris — Sistema
+   visual oscuro"). Azul marino profundo con acentos dorados.
+   Regla: dorado para acciones y selección; azul marino para la
+   estructura; blanco y gris azulado para la jerarquía de texto.
+   Va al final para mandar sobre los bloques anteriores; el tema
+   claro no se toca.
+   ============================================================ */
+:root:not([data-theme="light"]) {
+  /* Tokens del diseño */
+  --x-bg-primary: #061123;
+  --x-bg-sidebar: #081629;
+  --x-surface-card: #0a192e;
+  --x-surface-elevated: #10223a;
+  --x-gold: #d6ad55;
+  --x-gold-light: #f1d58c;
+  --x-text-primary: #f4f5f7;
+  --x-text-secondary: #a8b5c8;
+  --x-border: #263a54;
+  --x-success: #22c55e;
+  --x-error: #ef5350;
+  --x-info: #2588e8;
+
+  /* Acento por defecto (si el usuario elige otro en Apariencia, manda el suyo) */
+  --accent: var(--x-gold);
+  --accent-light: var(--x-gold-light);
+  --accent-strong: #b8903c;
+
+  --color-bg: var(--x-bg-primary);
+  --color-sidebar-bg: var(--x-bg-sidebar);
+  --color-surface: var(--x-surface-card);
+  --color-surface-solid: var(--x-surface-card);
+  --color-card: var(--x-surface-card);
+  --color-card-hover: var(--x-surface-elevated);
+  --color-border: var(--x-border);
+  --color-text: var(--x-text-primary);
+  --color-text-muted: var(--x-text-secondary);
+  --color-text-tertiary: #71829a;
+
+  --color-primary: var(--accent);
+  --color-primary-hover: var(--accent-light);
+  --color-primary-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --color-primary-contrast: var(--x-bg-primary);
+  --color-focus-border: var(--accent);
+  --color-focus-shadow: color-mix(in srgb, var(--accent) 25%, transparent);
+  --color-active-bg: color-mix(in srgb, var(--accent) 16%, transparent);
+  --color-active-text: var(--accent-light);
+
+  --color-success: var(--x-success);
+  --color-danger: var(--x-error);
+  --color-info: var(--x-info);
+  --color-warning: var(--x-gold);
+  --color-whatsapp: var(--x-success);
+
+  --color-status-error-text: var(--x-error);
+  --color-status-error-bg: rgba(239, 83, 80, 0.16);
+  --color-status-error-border: rgba(239, 83, 80, 0.4);
+  --color-status-protected-text: #5aa7f0;
+  --color-status-protected-bg: rgba(37, 136, 232, 0.16);
+  --color-status-protected-border: rgba(37, 136, 232, 0.4);
+  --color-status-custom-text: var(--x-success);
+  --color-status-custom-bg: rgba(34, 197, 94, 0.16);
+  --color-status-custom-border: rgba(34, 197, 94, 0.4);
+  --color-status-default-text: var(--x-gold-light);
+  --color-status-default-bg: rgba(214, 173, 85, 0.16);
+  --color-status-default-border: rgba(214, 173, 85, 0.4);
+  --color-status-none-text: var(--x-text-secondary);
+  --color-status-none-bg: rgba(168, 181, 200, 0.12);
+  --color-status-none-border: rgba(168, 181, 200, 0.28);
+
+  /* Campos y botones secundarios: tonos, sin divisiones pesadas */
+  --color-input-bg: var(--x-bg-sidebar);
+  --color-btn-secondary-bg: var(--x-surface-card);
+  --color-btn-secondary-bg-hover: var(--x-surface-elevated);
+  --color-lead-hover-border: #34506f;
+  --color-scrollbar-thumb: rgba(168, 181, 200, 0.22);
+
+  --gold-gradient: linear-gradient(135deg, var(--accent-light) -30%, var(--accent) 55%);
+  --dark-gradient: linear-gradient(180deg, var(--x-surface-elevated) 0%, var(--x-bg-primary) 100%);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.22);
+
+  /* Menú lateral */
+  --sb-bg: radial-gradient(120% 35% at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 60%),
+           var(--x-bg-sidebar);
+  --sb-text: var(--x-text-primary);
+  --sb-muted: var(--x-text-secondary);
+  --sb-border: var(--x-border);
+  --sb-hover: color-mix(in srgb, var(--accent) 9%, transparent);
+  --sb-card: var(--x-surface-card);
+
+  --bg-overlay-start: rgba(6, 17, 35, 0.74);
+  --bg-overlay-end: rgba(6, 17, 35, 0.95);
+}
+
+:root:not([data-theme="light"]) body {
+  background:
+    radial-gradient(ellipse 55% 40% at 100% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 70%),
+    var(--x-bg-primary);
+  background-attachment: fixed;
+}
+:root:not([data-theme="light"]) .sb { border-right: 1px solid var(--x-border); }
+:root:not([data-theme="light"]) .sb-link .icon { color: var(--x-text-secondary); }
+:root:not([data-theme="light"]) .sb-link:hover { background: var(--sb-hover); color: var(--x-text-primary); }
+:root:not([data-theme="light"]) .sb-link.active {
+  background: var(--accent);
+  color: var(--x-bg-primary);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+:root:not([data-theme="light"]) .sb-link.active .icon { color: var(--x-bg-primary); }
+:root:not([data-theme="light"]) .sb-org-name { color: var(--x-text-primary); }
+:root:not([data-theme="light"]) .sb-footer,
+:root:not([data-theme="light"]) .sb-org { border-color: var(--x-border); }
+:root:not([data-theme="light"]) .btn-primary {
+  background: var(--accent);
+  color: var(--x-bg-primary);
+  border: 1px solid var(--accent);
+}
+:root:not([data-theme="light"]) .btn-primary:hover { background: var(--accent-light); border-color: var(--accent-light); }
+:root:not([data-theme="light"]) .btn-secondary {
+  background: transparent;
+  border: 1px solid var(--x-border);
+  color: var(--x-text-primary);
+}
+:root:not([data-theme="light"]) .btn-secondary:hover { background: var(--x-surface-elevated); }
+:root:not([data-theme="light"]) .input,
+:root:not([data-theme="light"]) select.input,
+:root:not([data-theme="light"]) textarea.input {
+  background: var(--x-bg-sidebar);
+  border-color: var(--x-border);
+  color: var(--x-text-primary);
+}
+:root:not([data-theme="light"]) .soft-card,
+:root:not([data-theme="light"]) .card { background: var(--x-surface-card); border-color: var(--x-border); }
+:root:not([data-theme="light"]) .dash-promo p { color: var(--x-text-secondary) !important; }
+:root:not([data-theme="light"]) .sb {
+  background:
+    radial-gradient(90% 26% at 50% 0%, color-mix(in srgb, var(--accent) 12%, transparent) 0%, transparent 70%),
+    var(--x-bg-sidebar);
+  box-shadow: none;
+}
+:root:not([data-theme="light"]) .sb::after { background: var(--x-border); box-shadow: none; }

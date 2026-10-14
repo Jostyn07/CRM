@@ -251,7 +251,7 @@ export function BarsChart({ rows, field = 'leads_new', height = 190 }) {
                     height: `${(values[i] / max) * 100}%`,
                     minHeight: values[i] ? 3 : 0,
                     borderRadius: '5px 5px 2px 2px',
-                    background: hover === i ? 'var(--color-primary-hover)' : 'linear-gradient(180deg, #e2bd76 0%, #c3923f 100%)',
+                    background: hover === i ? 'var(--color-primary-hover)' : 'linear-gradient(180deg, var(--accent-light) 0%, var(--accent) 100%)',
                     opacity: hover == null || hover === i ? 1 : 0.55,
                     transition: 'opacity 0.12s ease',
                   }}
