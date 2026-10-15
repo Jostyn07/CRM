@@ -96,10 +96,21 @@ export default function ForwardDialog({ message, onClose, conversations, users, 
   return (
     <Modal open={!!message} onClose={busy ? () => {} : onClose} title="Reenviar" width={520}>
       {message && (
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', color: 'var(--color-text-muted)', padding: '0.55rem 0.7rem', borderRadius: 10, background: 'var(--color-active-bg)' }}>
-            <Icon name="forward" size={15} />
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0, fontSize: '0.84rem', color: 'var(--color-text-muted)', padding: '0.55rem 0.7rem', borderRadius: 10, background: 'var(--color-active-bg)' }}>
+            <Icon name="forward" size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+            {/* Texto largo: se parte en varias líneas (máx. 4) y no empuja los botones */}
+            <span
+              style={{
+                minWidth: 0,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                display: '-webkit-box',
+                WebkitLineClamp: 4,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
               {KIND_LABEL[message.kind] ?? 'Mensaje'}
               {message.attachment_name ? `: ${message.attachment_name}` : message.body ? `: ${message.body}` : ''}
             </span>
@@ -108,15 +119,15 @@ export default function ForwardDialog({ message, onClose, conversations, users, 
             <Icon name="search" size={16} />
             <input className="input" autoFocus placeholder="Buscar persona, grupo o chat…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <div style={{ maxHeight: 360, overflowY: 'auto', display: 'grid', gap: 2 }}>
+          <div style={{ maxHeight: 360, overflowY: 'auto', overflowX: 'hidden', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
             {convs.length > 0 && <div className="fwd-label">Chats</div>}
             {convs.map(Row)}
             {people.length > 0 && <div className="fwd-label">Personas</div>}
             {people.map(Row)}
             {!convs.length && !people.length && <p style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)', padding: 8 }}>Sin resultados.</p>}
           </div>
-          {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', margin: 0 }}>{error}</p>}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', margin: 0, overflowWrap: 'anywhere' }}>{error}</p>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
             <button className="btn btn-secondary" onClick={onClose} disabled={busy}>
               Cancelar
             </button>
