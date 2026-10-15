@@ -2010,6 +2010,7 @@ a.card:hover, a.soft-card:hover, .lead-card:hover {
 .cm-item-prev { flex: 1; font-size: 0.78rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-item.unread .cm-item-prev { color: var(--color-text); font-weight: 600; }
 .cm-unread { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent-grad); color: #171411; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.cm-unread.silenced { background: var(--color-btn-secondary-bg-hover); color: var(--color-text-muted); }
 .cm-pending { align-self: flex-start; margin-top: 3px; display: inline-flex; align-items: center; gap: 4px; font-size: 0.68rem; font-weight: 600; color: #b7791f; background: rgba(234,179,8,0.14); border-radius: 999px; padding: 2px 8px; }
 .cm-list-foot, .cm-thread-foot { display: flex; gap: 6px; align-items: flex-start; padding: 10px 14px; border-top: 1px solid var(--color-border); font-size: 0.74rem; color: var(--color-text-muted); }
 .cm-thread-head { display: flex; align-items: center; gap: 12px; padding: 0.9rem 1.2rem; border-bottom: 1px solid var(--color-border); }

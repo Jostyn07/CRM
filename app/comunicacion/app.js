@@ -23,12 +23,14 @@ import {
   clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setPinned, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
   getPinned,
   pinMessage,
+  setMuted,
   searchMessages,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
 import CardMenu from '../../components/ui/cardMenu';
 import ScanChatDialog from '../../components/tickets/scanChatDialog';
+import MuteDialog, { mutedLabel } from '../../components/chat/muteDialog';
 import FileDropZone from '../../components/ui/fileDropZone';
 import ImageViewer from '../../components/chat/imageViewer';
 import { useTeamAvatars } from '../../lib/me/workspace';
@@ -63,6 +65,7 @@ function Avatar({ name, size = 34, group, icon, src }) {
 export default function ComunicacionApp() {
   const { user, profile, can } = useSession();
   const [scanConv, setScanConv] = useState(null);
+  const [muteConv, setMuteConv] = useState(null);
   const { users, userMap } = useOrgUsers();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -469,6 +472,19 @@ export default function ComunicacionApp() {
     }
   }
 
+  // Silenciar: no suena, no avisa y no suma al contador del menú
+  async function handleMute(c, until) {
+    try {
+      await setMuted(c.conversation_id, until);
+      setMuteConv(null);
+      setToast(until ? 'Chat silenciado' : 'Se quitó el silencio');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function handlePin(c, on) {
     try {
       await setPinned(c.conversation_id, on);
@@ -641,7 +657,7 @@ export default function ComunicacionApp() {
     router.push(back);
   };
   // Cada pestaña muestra cuántas conversaciones tienen mensajes sin leer
-  const sinLeer = (c) => (Number(c.unread) || 0) > 0;
+  const sinLeer = (c) => (Number(c.unread) || 0) > 0 && !c.muted_until;
   const tabCount = {
     all: (conversations ?? []).filter(sinLeer).length,
     chats: (conversations ?? []).filter((c) => c.kind !== 'group' && sinLeer(c)).length,
@@ -802,8 +818,9 @@ export default function ComunicacionApp() {
                             </>
                           )}
                         </span>
+                        {c.muted_until && <Icon name="bell-off" size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} title={mutedLabel(c.muted_until)} />}
                         {c.read_later && <Icon name="bookmark" size={13} style={{ color: '#c99a3d', flexShrink: 0 }} title="Leer más tarde" />}
-                        {unread > 0 && <span className="cm-unread">{unread}</span>}
+                        {unread > 0 && <span className={`cm-unread${c.muted_until ? ' silenced' : ''}`}>{unread}</span>}
                       </div>
                     </div>
                   </button>
@@ -885,6 +902,9 @@ export default function ComunicacionApp() {
                       conv.pinned_at
                         ? { label: 'Desfijar chat', onClick: () => handlePin(conv, false) }
                         : { label: 'Fijar chat', onClick: () => handlePin(conv, true) },
+                      conv.muted_until
+                        ? { label: 'Quitar silencio', onClick: () => handleMute(conv, null) }
+                        : { label: 'Silenciar…', onClick: () => setMuteConv(conv) },
                       conv.read_later
                         ? { label: 'Quitar de leer más tarde', onClick: () => handleReadLater(conv, false) }
                         : { label: 'Marcar para leer más tarde', onClick: () => handleReadLater(conv, true) },
@@ -1097,6 +1117,7 @@ export default function ComunicacionApp() {
           loadConversations();
         }}
       />
+      {muteConv && <MuteDialog conv={muteConv} onClose={() => setMuteConv(null)} onPick={(until) => handleMute(muteConv, until)} />}
       {scanConv && <ScanChatDialog conversationId={scanConv.conversation_id} onClose={() => setScanConv(null)} />}
       <ProfileCard
         userId={profileUser}
