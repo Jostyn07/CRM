@@ -186,11 +186,6 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
             {f.label}
           </button>
         ))}
-        {help && (
-          <span className="cmp-help" title={help} tabIndex={0}>
-            <Icon name="info" size={13} /> Formato rápido
-          </span>
-        )}
       </div>
 
       {recording ? (
