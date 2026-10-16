@@ -509,11 +509,12 @@ export default function WaThread({ conversationId, orgId, userMap, canSend = tru
             />
             <button
               className={`wa-send${mode === 'note' ? ' note' : ''}`}
+              title={sending ? 'Enviando…' : mode === 'note' ? 'Guardar nota' : 'Enviar mensaje (Enter)'}
+              aria-label={mode === 'note' ? 'Guardar nota' : 'Enviar mensaje'}
               disabled={sending || (mode === 'note' ? !text.trim() : !text.trim() && !files.length)}
               onClick={submit}
             >
-              <Icon name={mode === 'note' ? 'lock' : 'send'} size={16} />
-              {sending ? 'Enviando…' : mode === 'note' ? 'Guardar nota' : 'Enviar mensaje'}
+              <Icon name={mode === 'note' ? 'lock' : 'send'} size={20} style={sending ? { opacity: 0.5 } : undefined} />
             </button>
           </div>
           {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.78rem', marginTop: 4 }}>{error}</p>}

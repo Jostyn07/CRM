@@ -2853,3 +2853,111 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
   box-shadow: none;
 }
 :root:not([data-theme="light"]) .sb::after { background: var(--x-border); box-shadow: none; }
+
+/* ============================================================
+   REDISEÑO Comunicación interna y WhatsApp (Figma "Rediseño",
+   HD 1920×1080). Sin encabezado de página: las columnas ocupan todo
+   el alto bajo la barra superior. Lista amplia con avatares grandes y
+   divisores; cabeceras de 82px; compositor con botón cuadrado dorado.
+   ============================================================ */
+
+/* ---------- Comunicación interna ---------- */
+.cm-layout { gap: 18px; padding: 24px 24px 24px; }
+@media (min-width: 861px) { .cm-layout { grid-template-columns: 390px minmax(0, 1fr); } }
+@media (min-width: 861px) and (max-width: 1280px) { .cm-layout { grid-template-columns: 320px minmax(0, 1fr); } }
+.cm-list-top { padding: 18px 20px 0; border-bottom: none; }
+.cm-list-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.cm-list-titlebar .cm-list-title { margin: 0; font-size: 1.1rem; }
+.cm-search { height: 44px; border-radius: 12px; padding: 0 12px; }
+.cm-tabs { margin-top: 14px; gap: 0; border-bottom: 1px solid var(--color-border); }
+.cm-tabs button { padding: 10px 4px; font-size: 0.86rem; }
+.cm-items { padding: 4px 10px; }
+.cm-item { gap: 14px; padding: 14px 12px; border-radius: 12px; position: relative; align-items: center; }
+.cm-item::after { content: ''; position: absolute; left: 74px; right: 12px; bottom: 0; height: 1px; background: var(--color-border); }
+.cm-item.active::after, .cm-item:hover::after, .cm-item:has(+ .cm-item.active)::after, .cm-item:has(+ .cm-item:hover)::after { display: none; }
+.cm-item-name { font-size: 0.95rem; }
+.cm-item-prev { font-size: 0.82rem; }
+.cm-item-body { display: grid; gap: 6px; min-width: 0; flex: 1; }
+.cm-list-foot { padding: 12px 20px; border-top: none; }
+
+.cm-thread-head { min-height: 82px; padding: 14px 22px; gap: 14px; }
+.cm-thread-head strong, .cm-head-name { font-size: 1.12rem !important; }
+
+.cmp { padding: 14px 22px 18px; }
+.cmp-format button { color: var(--color-text-muted) !important; }
+.cmp-format button:hover { color: var(--color-text) !important; background: var(--color-active-bg) !important; }
+.cmp-help { margin-left: 18px; display: inline-flex; align-items: center; gap: 5px; font-size: 0.74rem; color: var(--color-text-muted); cursor: help; }
+.cmp-row { gap: 8px !important; align-items: center !important; }
+.cmp-row textarea.input, .cmp-row .input { min-height: 52px; border-radius: 12px; padding: 14px 18px; font-size: 0.92rem; }
+.cmp-send {
+  width: 56px; height: 52px; flex-shrink: 0; border-radius: 12px; border: 1px solid var(--accent);
+  background: var(--accent); color: var(--color-primary-contrast, #171411);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.cmp-send:hover:not(:disabled) { background: var(--accent-light); border-color: var(--accent-light); }
+.cmp-send:active:not(:disabled) { transform: translateY(1px); }
+.cmp-send:disabled { opacity: .55; cursor: default; }
+.cmp-send.cmp-mic { background: transparent; border-color: var(--color-border); color: var(--color-text); }
+.cmp-send.cmp-mic:hover:not(:disabled) { background: var(--color-active-bg); border-color: var(--accent); }
+
+/* Burbujas en el tema oscuro: azul marino con borde sutil (el dorado
+   queda para acciones y selección) */
+:root:not([data-theme="light"]) {
+  --bubble-mine-bg: #142843;
+  --bubble-mine-fg: var(--x-text-primary);
+  --bubble-mine-border: 1px solid #2a4366;
+  --bubble-other-bg: var(--x-surface-elevated);
+  --bubble-other-border: 1px solid var(--x-border);
+}
+
+/* ---------- WhatsApp ---------- */
+.wa-page { padding: 0; max-width: none; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.wa-layout { flex: 1; min-height: 0; height: auto; margin: 0; padding: 24px 24px 24px; gap: 16px; }
+@media (min-width: 1501px) {
+  .wa-layout { grid-template-columns: 410px minmax(0, 1fr); }
+  .wa-layout.with-panel { grid-template-columns: 410px minmax(0, 1fr) 420px; }
+  .wa-layout.with-panel.panel-wide { grid-template-columns: 340px minmax(0, 1fr) minmax(420px, 46%); }
+}
+.wa-list-head { padding: 18px 20px 12px; }
+.wa-list-head strong { font-size: 1.1rem; }
+.wa-list-tools { padding: 0 20px 14px; display: grid; gap: 12px; border-bottom: 1px solid var(--color-border); }
+.wa-search { height: 44px; border-radius: 12px; }
+.wa-filters { gap: 8px; }
+.wa-filters button { height: 34px; padding: 0 12px; border-radius: 10px; font-size: 0.8rem; }
+.wa-list-items { padding: 4px 10px; }
+.wa-item { display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px; border: 1px solid transparent; border-radius: 12px; position: relative; border-bottom: none; border-left: 1px solid transparent; }
+.wa-item::after { content: ''; position: absolute; left: 68px; right: 12px; bottom: 0; height: 1px; background: var(--color-border); }
+.wa-item.on { background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.wa-item.on::after, .wa-item:hover::after, .wa-item:has(+ .wa-item.on)::after { display: none; }
+.wa-item-avatar { width: 44px; height: 44px; font-size: 0.85rem; }
+.wa-item-body { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.wa-item-name { font-size: 0.93rem; }
+.wa-list-foot { padding: 12px 20px; text-align: left; }
+
+.wa-head { padding: 16px 22px 12px; }
+.wa-avatar { width: 48px; height: 48px; }
+.wa-head-main .wa-avatar + div strong, .wa-head-name { font-size: 1.12rem; }
+
+.wa-composer { padding: 14px 22px 16px; }
+.wa-tabs button { height: 42px; padding: 0 14px; border-radius: 12px; }
+.wa-composer textarea.input, .wa-composer .input { min-height: 52px; border-radius: 12px; padding: 14px 18px; }
+.wa-send {
+  width: 56px; height: 52px; padding: 0; justify-content: center; border-radius: 12px; flex-shrink: 0;
+  background: var(--accent); color: var(--color-primary-contrast, #171411); border: 1px solid var(--accent);
+}
+.wa-send:hover:not(:disabled) { background: var(--accent-light); border-color: var(--accent-light); }
+.wa-send.note { background: #b7791f; border-color: #b7791f; color: #fff; }
+.wa-hint { margin-top: 8px; }
+:root:not([data-theme="light"]) .wa-tabs button.on.msg { color: var(--x-success); background: rgba(34, 197, 94, 0.1); border-color: rgba(34, 197, 94, 0.35); }
+:root:not([data-theme="light"]) .wa-tabs button.on.note { color: var(--x-gold-light); background: rgba(214, 173, 85, 0.12); border-color: rgba(214, 173, 85, 0.4); }
+:root:not([data-theme="light"]) .wa-avatar { color: var(--x-gold-light); background: color-mix(in srgb, var(--accent) 16%, var(--x-surface-elevated)); }
+
+/* Pantallas angostas: se mantiene el diseño responsivo existente */
+@media (max-width: 900px) {
+  .cm-layout, .wa-layout { padding: 8px 10px 12px; gap: 10px; }
+}
+@media (max-width: 860px) {
+  .wa-page { height: auto; overflow: visible; }
+  .wa-layout { flex: none; }
+}

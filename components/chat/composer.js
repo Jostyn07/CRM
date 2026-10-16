@@ -21,7 +21,7 @@ const FORMATS = [
   { label: '</>', title: 'Código (`texto`)', marker: '`', style: { fontFamily: 'monospace', fontSize: '0.75rem' } },
 ];
 
-export default function Composer({ orgId, userId, userMap, replyTo, onCancelReply, onSend, disabled, droppedFiles }) {
+export default function Composer({ orgId, userId, userMap, replyTo, onCancelReply, onSend, disabled, droppedFiles, help }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]); // [{file, url}]
   const [showEmoji, setShowEmoji] = useState(false);
@@ -130,9 +130,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.25rem', padding: '4px 6px', borderRadius: 8, color: 'var(--color-text)' };
 
   return (
-    <div
-      style={{ borderTop: '1px solid var(--color-border)', padding: '0.5rem 0.8rem 0.7rem', position: 'relative' }}
-    >
+    <div className="cmp" style={{ borderTop: '1px solid var(--color-border)', position: 'relative' }}>
       {replyTo && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', marginBottom: 6, borderLeft: '3px solid var(--color-primary)', background: 'var(--color-active-bg)', borderRadius: 6 }}>
           <div style={{ flex: 1, minWidth: 0, fontSize: '0.8rem' }}>
@@ -175,7 +173,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
       )}
 
       {/* Barra de formato */}
-      <div style={{ display: 'flex', gap: 2, marginBottom: 4 }}>
+      <div className="cmp-format" style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 6 }}>
         {FORMATS.map((f) => (
           <button
             key={f.label}
@@ -188,6 +186,11 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
             {f.label}
           </button>
         ))}
+        {help && (
+          <span className="cmp-help" title={help} tabIndex={0}>
+            <Icon name="info" size={13} /> Formato rápido
+          </span>
+        )}
       </div>
 
       {recording ? (
@@ -205,7 +208,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
           </button>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
+        <div className="cmp-row" style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
           <div style={{ position: 'relative' }}>
             <button type="button" style={iconBtn} title="Emojis" onClick={() => setShowEmoji((v) => !v)}>
               <Icon name="smile" size={18} />
@@ -285,11 +288,11 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
             style={{ flex: 1 }}
           />
           {text.trim() || files.length ? (
-            <button type="button" className="btn btn-primary" disabled={sending || disabled} onClick={submit}>
-              {sending ? '…' : 'Enviar'}
+            <button type="button" className="cmp-send" title="Enviar (Enter)" aria-label="Enviar" disabled={sending || disabled} onClick={submit}>
+              <Icon name="send" size={20} style={sending ? { opacity: 0.5 } : undefined} />
             </button>
           ) : (
-            <button type="button" style={{ ...iconBtn, fontSize: '1.3rem' }} title="Grabar nota de voz" disabled={sending || disabled} onClick={startRecording}>
+            <button type="button" className="cmp-send cmp-mic" title="Grabar nota de voz" aria-label="Grabar nota de voz" disabled={sending || disabled} onClick={startRecording}>
               <Icon name="mic" size={20} />
             </button>
           )}

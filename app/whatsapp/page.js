@@ -1,176 +1,653 @@
 'use client';
-// Ruta: app/whatsapp/page.js
-// Bandeja de atención de WhatsApp: conversaciones (según los números
-// permitidos y mi alcance) con filtros, la conversación al centro y la
-// ficha del cliente a la derecha.
+// Ruta: app/comunicacion/app.js
+// Chat interno (Fase 4): conversaciones 1 a 1 y grupos de la
+// organización, en tiempo real. Texto con formato, emojis, stickers,
+// imágenes, videos, audios/notas de voz, documentos, respuestas a
+// mensajes y reacciones. El autor puede borrar sus mensajes; el texto se edita
+// durante 15 minutos. Separado de la comunicación con clientes.
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import RequirePermission from '../../components/ui/requirePermission';
-import WaThread from '../../components/whatsapp/waThread';
-import WazzupFrame from '../../components/whatsapp/wazzupFrame';
-import WaModeToggle from '../../components/whatsapp/waModeToggle';
-import Icon, { IconText } from '../../components/ui/icon';
 import { supabase } from '../../lib/supabase/client';
 import { useSession } from '../../lib/auth/sessionContext';
 import { useOrgUsers } from '../../lib/tasks/useOrgUsers';
 import { trackEvent } from '../../lib/activity/tracker';
-import { fechaCorta } from '../../lib/chat/api';
-import { formatChat, listChannels, listConversations, setNoReply, setReadLater, useWaMode } from '../../lib/whatsapp/api';
+import { getAvatarColors, getInitials } from '../../components/leads/avatarColor';
+import Icon, { IconText } from '../../components/ui/icon';
+import MessageBubble from '../../components/chat/messageBubble';
+import Composer from '../../components/chat/composer';
+import { CreateGroupDialog, GroupInfoDialog } from '../../components/chat/groupDialogs';
+import ForwardDialog from '../../components/chat/forwardDialog';
+import {
+  EDIT_MINUTES, MSG_COLS, diaSeparador, hora, useSignedUrl, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
+  clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setPinned, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
+  getPinned,
+  pinMessage,
+  setMuted,
+  searchMessages,
+} from '../../lib/chat/api';
+import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
-import WaClientPanel from '../../components/whatsapp/waClientPanel';
-import { useMyPrefs } from '../../lib/me/workspace';
-import { bulkUpdate } from '../../lib/leads/api';
+import CardMenu from '../../components/ui/cardMenu';
+import ScanChatDialog from '../../components/tickets/scanChatDialog';
+import MuteDialog, { mutedLabel } from '../../components/chat/muteDialog';
+import FileDropZone from '../../components/ui/fileDropZone';
+import ImageViewer from '../../components/chat/imageViewer';
+import { useTeamAvatars } from '../../lib/me/workspace';
+import ProfileCard, { PhotoViewer } from '../../components/me/profileCard';
 
-// Filtros de la bandeja
-const FILTERS = [
-  { key: 'all', label: 'Todas', test: () => true },
-  { key: 'reply', label: 'Por responder', test: (c) => c.needs_reply },
-  { key: 'unassigned', label: 'Sin asignar', test: (c) => !c.assigned_user_id },
-  { key: 'mine', label: 'Mis conversaciones', test: (c, me) => c.assigned_user_id === me },
-  { key: 'unread', label: 'No leídas', test: (c) => Number(c.unread) > 0 },
-  { key: 'later', label: 'Más tarde', test: (c) => c.read_later },
-  { key: 'resolved', label: 'Resueltas', test: (c) => !!c.no_reply_by },
-];
-
-// Estado de la conversación para el equipo
-function statusOf(c) {
-  if (c.needs_reply) return { key: 'reply', label: 'Por responder' };
-  if (c.no_reply_by) return { key: 'resolved', label: 'Resuelta' };
-  return { key: 'follow', label: 'En seguimiento' };
-}
-
-function initials(name) {
-  const parts = (name || '').replace(/[^\p{L}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '#';
-  return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase();
-}
-
-export default function WhatsappPage() {
+function Avatar({ name, size = 34, group, icon, src }) {
+  const c = getAvatarColors(name);
+  if (src) {
+    return <img src={src} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block' }} />;
+  }
   return (
-    <RequirePermission perm="whatsapp.view">
-      <Suspense fallback={null}>
-        <Inbox />
-      </Suspense>
-    </RequirePermission>
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: group || icon ? 'var(--color-active-bg)' : c.bg,
+        color: group || icon ? 'var(--color-primary)' : c.color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: 700,
+        fontSize: group ? size * 0.5 : size * 0.34,
+        flexShrink: 0,
+      }}
+    >
+      {icon ? <Icon name={icon} size={Math.round(size * 0.5)} /> : group ? <Icon name="users" size={Math.round(size * 0.5)} /> : getInitials(name)}
+    </div>
   );
 }
 
-function Inbox() {
-  const { user, profile, can, scopeOf } = useSession();
-  const myPrefs = useMyPrefs(profile?.organization_id ? user?.id : null);
-  const [mode, setMode] = useWaMode();
-  const canGlobal = scopeOf('whatsapp.view') === 'organization';
+export default function ComunicacionApp() {
+  const { user, profile, can } = useSession();
+  const [scanConv, setScanConv] = useState(null);
+  const [muteConv, setMuteConv] = useState(null);
   const { users, userMap } = useOrgUsers();
   const router = useRouter();
-  const params = useSearchParams();
-  const [channels, setChannels] = useState([]);
-  const [channel, setChannel] = useState('');
-  const [convs, setConvs] = useState(null);
-  const [selected, setSelected] = useState(params.get('c'));
-  const [q, setQ] = useState('');
-  const [filter, setFilter] = useState('all'); // all | reply | unassigned | mine | unread | resolved | later
-  const [panel, setPanel] = useState(true); // ficha del cliente visible
-  const [error, setError] = useState(null);
+  const searchParams = useSearchParams();
+  const me = user?.id;
+  const avatars = useTeamAvatars(!!me);
+  const [profileUser, setProfileUser] = useState(null); // perfil abierto
+  const [bigPhoto, setBigPhoto] = useState(null); // foto de grupo en grande
+  const orgId = profile?.organization_id;
 
-  const load = useCallback(async () => {
+  const [conversations, setConversations] = useState(null);
+  const [selectedId, setSelectedId] = useState(searchParams.get('c'));
+  const [dropped, setDropped] = useState(null); // archivos soltados en el chat
+  const convsRef = useRef([]);
+  convsRef.current = conversations || [];
+  const [messages, setMessages] = useState([]);
+  const [extraRefs, setExtraRefs] = useState({}); // mensajes citados que no están cargados
+  const [reactions, setReactions] = useState({}); // id → [{user_id, emoji}]
+  const [reads, setReads] = useState({}); // id → [{user_id, read_at}]
+  const [members, setMembers] = useState([]); // [{user_id, joined_at}]
+  const [hasMore, setHasMore] = useState(false);
+  const [pinnedMsgs, setPinnedMsgs] = useState([]);
+  const [pinIdx, setPinIdx] = useState(0);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQ, setFindQ] = useState('');
+  const [findHits, setFindHits] = useState(null);
+  const [msgHits, setMsgHits] = useState([]);
+  const pendingJump = useRef(null);
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState('all');
+  const searchRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [pendingOther, setPendingOther] = useState(null);
+  const [newGroup, setNewGroup] = useState(false);
+  const [groupInfo, setGroupInfo] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [forwardMsg, setForwardMsg] = useState(null);
+  const [savedStickers, setSavedStickers] = useState(() => new Set());
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+  const [, setTick] = useState(0);
+  const endRef = useRef(null);
+  const stickToBottom = useRef(true);
+
+  const loadConversations = useCallback(async () => {
     try {
-      setConvs(await listConversations(channel));
+      setConversations(await listConversations());
     } catch (e) {
       setError(e.message);
     }
-  }, [channel]);
-
-  useEffect(() => {
-    listChannels().then((c) => setChannels(c.filter((x) => x.is_active))).catch(() => {});
   }, []);
 
   useEffect(() => {
-    load();
-    // Muchos cambios seguidos = una sola recarga de la bandeja
-    let timer;
-    const later = () => {
-      clearTimeout(timer);
-      timer = setTimeout(load, 1200);
-    };
-    const ch = supabase
-      .channel(`wa-inbox-${user?.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wa_conversations' }, later)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' }, later)
-      .subscribe();
-    const onRead = () => load();
-    window.addEventListener('wa:read', onRead);
-    return () => {
-      clearTimeout(timer);
-      supabase.removeChannel(ch);
-      window.removeEventListener('wa:read', onRead);
-    };
-  }, [load, user?.id]);
+    loadConversations();
+  }, [loadConversations]);
 
-  function open(id) {
-    setSelected(id);
-    const url = new URL(window.location.href);
-    url.searchParams.set('c', id);
-    router.replace(url.pathname + url.search, { scroll: false });
-    trackEvent('whatsapp.open', { entityType: 'wa_conversations', entityId: id });
-  }
+  // Usuarios creados antes de las Notas: se crean la primera vez
+  useEffect(() => {
+    if (conversations && !conversations.some((c) => c.kind === 'notes')) {
+      openNotes()
+        .then(() => loadConversations())
+        .catch(() => {});
+    }
+  }, [conversations, loadConversations]);
 
-  const list = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return (convs ?? [])
-      .filter((c) => FILTERS.find((f) => f.key === filter).test(c, user?.id))
-      .filter((c) => !term || `${c.lead_name ?? ''} ${c.contact_name ?? ''} ${c.chat_id}`.toLowerCase().includes(term.replace(/\D/g, '') || term))
-      .sort((a, b) => (b.read_later ? 1 : 0) - (a.read_later ? 1 : 0)); // "leer más tarde" arriba
-  }, [convs, q, filter, user?.id]);
+  // Stickers que ya tengo guardados (para marcar "Guardado")
+  const loadSaved = useCallback(() => {
+    listStickers()
+      .then((list) => setSavedStickers(new Set(list.map((x) => x.path))))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadSaved();
+  }, [loadSaved]);
 
-  const counts = useMemo(
-    () => Object.fromEntries(FILTERS.map((f) => [f.key, (convs ?? []).filter((c) => f.test(c, user?.id)).length])),
-    [convs, user?.id]
+  const loadReactions = useCallback(async (ids) => {
+    const rows = await getReactions(ids);
+    setReactions((prev) => {
+      const next = { ...prev };
+      for (const id of ids) next[id] = [];
+      for (const r of rows) (next[r.message_id] ||= []).push(r);
+      return next;
+    });
+  }, []);
+
+  // "Visto" de mis mensajes
+  const loadReads = useCallback(
+    async (msgs) => {
+      const mine = msgs.filter((m) => m.sender_id === me && m.kind !== 'system').map((m) => m.id);
+      if (!mine.length) return;
+      const rows = await getReads(mine);
+      setReads((prev) => {
+        const next = { ...prev };
+        for (const id of mine) next[id] = [];
+        for (const r of rows) next[r.message_id].push(r);
+        return next;
+      });
+    },
+    [me]
   );
 
-  async function assign(c, userId) {
-    if (!c.lead_id) return;
+  const loadMembers = useCallback(async (id) => {
     try {
-      await bulkUpdate([c.lead_id], { assigned_user_id: userId || null });
-      trackEvent('whatsapp.assign', { entityType: 'leads', entityId: c.lead_id });
-      load();
-    } catch (e) {
-      setError(e.message);
+      const list = await groupMembers(id);
+      if (window.__chatOpenConversation === id) setMembers(list);
+    } catch {
+      setMembers([]);
     }
-  }
+  }, []);
 
-  async function markNoReply(c, on) {
-    try {
-      await setNoReply(c.id, on);
-      load();
-    } catch (e) {
-      setError(e.message);
-    }
-  }
+  // Citas de mensajes antiguos que no están en la página cargada
+  const ensureRefs = useCallback(async (msgs) => {
+    const loaded = new Set(msgs.map((m) => m.id));
+    const missing = [...new Set(msgs.map((m) => m.reply_to_id).filter((id) => id && !loaded.has(id)))];
+    if (!missing.length) return;
+    const { data } = await supabase.from('chat_messages').select(MSG_COLS).in('id', missing);
+    if (data?.length) setExtraRefs((prev) => ({ ...prev, ...Object.fromEntries(data.map((m) => [m.id, m])) }));
+  }, []);
 
-  // Leer más tarde: al marcarla se cierra, para que no se quite al leer
-  async function toggleReadLater(c) {
-    try {
-      await setReadLater(c.id, !c.read_later);
-      if (!c.read_later) {
-        setSelected(null);
-        const url = new URL(window.location.href);
-        url.searchParams.delete('c');
-        router.replace(url.pathname + url.search, { scroll: false });
+  const openConversation = useCallback(
+    async (id) => {
+      setSelectedId(id);
+      setEditId(null);
+      setReplyTo(null);
+      setError(null);
+      setReactions({});
+      setReads({});
+      setMembers([]);
+      setExtraRefs({});
+      setPinnedMsgs([]);
+      setFindOpen(false);
+      setFindQ('');
+      setFindHits(null);
+      stickToBottom.current = true;
+      window.__chatOpenConversation = id;
+      const url = new URL(window.location.href);
+      url.searchParams.set('c', id);
+      router.replace(url.pathname + url.search, { scroll: false });
+      try {
+        const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
+        const msgs = await getMessages(id, { after: clearedAt || undefined });
+        // Si mientras cargaba se abrió otro chat, esta respuesta se descarta
+        if (window.__chatOpenConversation !== id) return;
+        setMessages(msgs);
+        setHasMore(msgs.hasMore);
+        loadReactions(msgs.map((m) => m.id));
+        loadReads(msgs);
+        loadMembers(id);
+        getPinned(id).then((p) => window.__chatOpenConversation === id && (setPinnedMsgs(p), setPinIdx(0))).catch(() => setPinnedMsgs([]));
+        ensureRefs(msgs);
+        await markRead(id);
+        loadConversations();
+        trackEvent('chat.open', { entityType: 'chat_conversations', entityId: id });
+      } catch (e) {
+        setError(e.message);
       }
-      load();
+    },
+    [router, loadConversations, loadReactions, loadReads, loadMembers, ensureRefs]
+  );
+
+  useEffect(() => {
+    const initial = searchParams.get('c');
+    if (initial) openConversation(initial);
+    return () => {
+      window.__chatOpenConversation = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Tiempo real: mensajes y reacciones
+  useEffect(() => {
+    if (!me) return undefined;
+    const channel = supabase
+      .channel(`chat-page-${me}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, async (payload) => {
+        const m = payload.new;
+        const cleared = convsRef.current.find((x) => x.conversation_id === m?.conversation_id)?.cleared_at;
+        if (m?.conversation_id && m.conversation_id === window.__chatOpenConversation && !(cleared && m.created_at <= cleared)) {
+          setMessages((prev) => {
+            const i = prev.findIndex((x) => x.id === m.id);
+            if (i === -1) return [...prev, m];
+            const next = prev.slice();
+            next[i] = m;
+            return next;
+          });
+          if (payload.eventType === 'INSERT' && m.reply_to_id) ensureRefs([m]);
+          if (payload.eventType === 'INSERT' && m.kind === 'system') loadMembers(m.conversation_id);
+          if (payload.eventType === 'INSERT' && m.sender_id !== me && document.visibilityState === 'visible') {
+            await markRead(m.conversation_id);
+          }
+        }
+        loadConversations();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reads' }, (payload) => {
+        const r = payload.new;
+        if (!r || r.conversation_id !== window.__chatOpenConversation) return;
+        setReads((prev) => {
+          if (!(r.message_id in prev)) return prev; // no es un mensaje mío cargado
+          if (prev[r.message_id].some((x) => x.user_id === r.user_id)) return prev;
+          return { ...prev, [r.message_id]: [...prev[r.message_id], r] };
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_pinned_messages' }, (payload) => {
+        const cid = payload.new?.conversation_id ?? payload.old?.conversation_id;
+        const open = window.__chatOpenConversation;
+        if (open && (!cid || cid === open)) getPinned(open).then((p) => window.__chatOpenConversation === open && setPinnedMsgs(p)).catch(() => {});
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reactions' }, (payload) => {
+        const id = payload.new?.message_id ?? payload.old?.message_id;
+        if (id) loadReactions([id]);
+      })
+      .subscribe();
+    const timer = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(timer);
+    };
+  }, [me, loadConversations, loadReactions, loadMembers, ensureRefs]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && window.__chatOpenConversation) {
+        markRead(window.__chatOpenConversation).then(loadConversations);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadConversations]);
+
+  useEffect(() => {
+    if (stickToBottom.current) endRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, selectedId]);
+
+  // Resultado del buscador de chats: al abrir la conversación, ir al mensaje
+  useEffect(() => {
+    const pj = pendingJump.current;
+    if (!pj || pj.conv !== selectedId || !messages.length) return;
+    pendingJump.current = null;
+    setTimeout(() => jumpToMessage(pj.id), 150);
+  }, [messages.length, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Buscador dentro del chat
+  useEffect(() => {
+    if (!findOpen || !selectedId) return undefined;
+    const q = findQ.trim();
+    if (q.length < 2) {
+      setFindHits(null);
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      searchMessages(q, selectedId, 100).then(setFindHits).catch((e) => setError(e.message));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [findQ, findOpen, selectedId]);
+
+  // Buscador de chats: también busca palabras dentro de los mensajes
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 3) {
+      setMsgHits([]);
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      searchMessages(q, null, 30).then(setMsgHits).catch(() => setMsgHits([]));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Si me sacaron del grupo abierto, cerrarlo
+  useEffect(() => {
+    if (conversations && selectedId && !pendingOther && !conversations.some((c) => c.conversation_id === selectedId)) {
+      const t = setTimeout(() => {
+        setConversations((cs) => {
+          if (cs && !cs.some((c) => c.conversation_id === window.__chatOpenConversation)) {
+            setSelectedId(null);
+            setMessages([]);
+            window.__chatOpenConversation = null;
+          }
+          return cs;
+        });
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [conversations, selectedId, pendingOther]);
+
+  async function startWith(userId) {
+    setSearch('');
+    try {
+      const id = await openDirect(userId);
+      setPendingOther(userId);
+      trackEvent('chat.start', { entityType: 'chat_conversations', entityId: id, metadata: { with: userId } });
+      await openConversation(id);
     } catch (e) {
       setError(e.message);
     }
   }
 
-  const conv = convs?.find((c) => c.id === selected);
-  const chName = (id) => channels.find((c) => c.id === id)?.name;
+  const loadingOlder = useRef(false);
+  const listRef = useRef(null);
+  async function loadOlder() {
+    if (!messages.length || loadingOlder.current) return;
+    loadingOlder.current = true;
+    stickToBottom.current = false;
+    const el = listRef.current;
+    const prevHeight = el ? el.scrollHeight : 0;
+    try {
+      const clearedAt = convsRef.current.find((x) => x.conversation_id === selectedId)?.cleared_at;
+      const id = selectedId;
+      const older = await getMessages(id, { before: messages[0].created_at, after: clearedAt || undefined });
+      if (window.__chatOpenConversation !== id) return;
+      setHasMore(older.hasMore);
+      setMessages((prev) => [...older.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
+      loadReactions(older.map((m) => m.id));
+      loadReads(older);
+      ensureRefs(older);
+      // Mantiene la vista en el mismo mensaje (no salta)
+      requestAnimationFrame(() => {
+        if (el) el.scrollTop += el.scrollHeight - prevHeight;
+      });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      loadingOlder.current = false;
+    }
+  }
+
+  const addLocal = (m) => {
+    // Un envío lento no debe aparecer en otro chat que se abrió después
+    if (m?.conversation_id && m.conversation_id !== window.__chatOpenConversation) return;
+    stickToBottom.current = true;
+    setReads((prev) => (m.id in prev ? prev : { ...prev, [m.id]: [] }));
+    setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+  };
+
+  // Envío: texto, archivos (el comentario va con el primero) o sticker
+  async function handleSend({ text, files = [], replyTo: reply, sticker, durationMs }) {
+    const conv = selectedId;
+    const replyId = reply?.id ?? null;
+    if (sticker) {
+      addLocal(await sendMessage(conv, { kind: 'sticker', attachment_path: sticker.path, attachment_mime: sticker.mime, reply_to_id: replyId }));
+      trackEvent('chat.sticker_sent', { entityType: 'chat_conversations', entityId: conv });
+    } else if (files.length) {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const path = await uploadChatFile(orgId, conv, f);
+        addLocal(
+          await sendMessage(conv, {
+            kind: kindFromMime(f.type),
+            body: i === 0 && text ? text : null,
+            attachment_path: path,
+            attachment_name: f.name,
+            attachment_mime: f.type || 'application/octet-stream',
+            attachment_size: f.size,
+            duration_ms: durationMs ?? null,
+            reply_to_id: i === 0 ? replyId : null,
+          })
+        );
+      }
+      trackEvent('chat.files_sent', { entityType: 'chat_conversations', entityId: conv, metadata: { count: files.length } });
+    } else if (text) {
+      addLocal(await sendMessage(conv, { body: text, reply_to_id: replyId }));
+    }
+    playSent('chat');
+    loadConversations();
+  }
+
+  async function handleEdit(id, text) {
+    const body = text.trim();
+    if (!body) return;
+    try {
+      const m = await editMessage(id, body);
+      setMessages((prev) => prev.map((x) => (x.id === id ? m : x)));
+      setEditId(null);
+      trackEvent('chat.message_edited', { entityType: 'chat_messages', entityId: id });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleDelete(m) {
+    if (!window.confirm('¿Eliminar este mensaje? Los demás verán "Mensaje eliminado".')) return;
+    try {
+      await deleteMessage(m.id);
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, deleted_at: new Date().toISOString(), body: null, attachment_path: null } : x)));
+      loadConversations();
+      trackEvent('chat.message_deleted', { entityType: 'chat_messages', entityId: m.id });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // Leer más tarde: se cierra el chat para que la marca no se quite al leer
+  async function handleReadLater(c, on) {
+    try {
+      await setReadLater(c.conversation_id, on);
+      if (on && c.conversation_id === selectedId) closeConversation();
+      setToast(on ? 'Marcado para leer más tarde' : 'Quitado de leer más tarde');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // Silenciar: no suena, no avisa y no suma al contador del menú
+  async function handleMute(c, until) {
+    try {
+      await setMuted(c.conversation_id, until);
+      setMuteConv(null);
+      setToast(until ? 'Chat silenciado' : 'Se quitó el silencio');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handlePin(c, on) {
+    try {
+      await setPinned(c.conversation_id, on);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handleClearChat(c) {
+    if (!window.confirm('¿Borrar este chat? Se borra solo para ti; los demás lo seguirán viendo.')) return;
+    try {
+      await clearChat(c.conversation_id);
+      if (c.conversation_id === selectedId) {
+        if (c.kind === 'direct') closeConversation();
+        else setMessages([]);
+      }
+      setToast('Chat borrado');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+      trackEvent('chat.cleared', { entityType: 'chat_conversations', entityId: c.conversation_id });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function closeConversation() {
+    setSelectedId(null);
+    setMessages([]);
+    window.__chatOpenConversation = null;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('c');
+    router.replace(url.pathname + url.search, { scroll: false });
+  }
+
+  async function handleReact(m, emoji, has) {
+    try {
+      await toggleReaction(m.id, me, emoji, has);
+      loadReactions([m.id]);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handleSaveSticker(m) {
+    try {
+      await saveAsSticker(orgId, me, m.attachment_path);
+      setSavedStickers((prev) => new Set(prev).add(m.attachment_path));
+      loadSaved();
+      setToast('Guardado en tus stickers');
+      setTimeout(() => setToast(null), 2500);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function jumpTo(id) {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return false;
+    stickToBottom.current = false;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.animate?.([{ opacity: 0.35, transform: 'scale(0.98)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 900 });
+    return true;
+  }
+
+  // Lleva a un mensaje aunque todavía no esté cargado (carga hacia atrás hasta encontrarlo)
+  async function jumpToMessage(id) {
+    if (jumpTo(id)) return;
+    const convId = window.__chatOpenConversation;
+    if (!convId) return;
+    const clearedAt = convsRef.current.find((x) => x.conversation_id === convId)?.cleared_at;
+    let before = messages[0]?.created_at;
+    let acc = [];
+    let more = hasMore;
+    let found = false;
+    try {
+      for (let i = 0; i < 20 && before && more; i++) {
+        const page = await getMessages(convId, { before, after: clearedAt || undefined, limit: 100 });
+        if (window.__chatOpenConversation !== convId) return;
+        acc = [...page, ...acc];
+        more = page.hasMore;
+        if (page.some((x) => x.id === id)) {
+          found = true;
+          break;
+        }
+        before = page[0]?.created_at;
+      }
+    } catch (e) {
+      setError(e.message);
+      return;
+    }
+    if (acc.length) {
+      stickToBottom.current = false;
+      setHasMore(more);
+      setMessages((prev) => [...acc.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
+      loadReactions(acc.map((x) => x.id));
+      loadReads(acc);
+      ensureRefs(acc);
+    }
+    if (!found) {
+      setToast('Ese mensaje es muy antiguo o ya no está disponible');
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    setTimeout(() => jumpTo(id), 120);
+  }
+
+  async function handlePinMessage(m, on) {
+    try {
+      await pinMessage(m.id, on);
+      const p = await getPinned(m.conversation_id);
+      setPinnedMsgs(p);
+      setPinIdx(0);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function enableNotifications() {
+    if (typeof Notification === 'undefined') return;
+    setNotifPerm(await Notification.requestPermission());
+  }
+
+  const conv = conversations?.find((c) => c.conversation_id === selectedId);
+  const isGroup = conv?.kind === 'group';
+  const isNotes = conv?.kind === 'notes';
+  const otherId = conv?.other_user_id ?? (conv ? null : pendingOther);
+  const title = isNotes ? 'Notas' : isGroup ? conv.title : userMap[otherId]?.name ?? (otherId ? 'Usuario' : '');
+  const nameOf = (c) => (c.kind === 'notes' ? 'Notas' : c.kind === 'group' ? c.title : userMap[c.other_user_id]?.name ?? 'Usuario');
+  // Ícono: Notas, grupo General, grupo de sucursal
+  const photoOf = (c) => (c?.kind === 'group' ? c.photo_url || null : c?.kind === 'direct' ? avatars[c.other_user_id] || null : null);
+  const iconOf = (c) => (c?.kind === 'notes' ? 'notebook-pen' : c?.system_key === 'org' ? 'building-2' : c?.system_key ? 'map-pin' : null);
+
+  const q = search.trim().toLowerCase();
+  const results = useMemo(
+    () => (q ? users.filter((u) => u.id !== me && `${u.name} ${u.email}`.toLowerCase().includes(q)).slice(0, 8) : []),
+    [q, users, me]
+  );
+  const convMatches = useMemo(
+    () =>
+      q.length >= 2 && conversations
+        ? conversations
+            .filter((c) => c.kind === 'group' && String(nameOf(c) || '').toLowerCase().includes(q))
+            .slice(0, 6)
+        : [],
+    [q, conversations, userMap] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const byId = useMemo(() => ({ ...extraRefs, ...Object.fromEntries(messages.map((m) => [m.id, m])) }), [messages, extraRefs]);
 
   if (!profile) return null;
 
-  // Salir: vuelve a la página donde estaba antes de entrar a WhatsApp
-  function exit() {
+  let lastDay = null;
+  let lastSender = null;
+
+  const initials = (n) =>
+    String(n || '')
+      .replace(/[^\p{L}\s]/gu, ' ')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase())
+      .join('') || '?';
+  const exit = () => {
     let back = '/dashboard';
     try {
       const saved = sessionStorage.getItem('xiris.lastPath');
@@ -178,235 +655,522 @@ function Inbox() {
       if (saved && !/^\/(comunicacion|whatsapp)(\/|\?|$)/.test(saved)) back = saved;
     } catch {}
     router.push(back);
-  }
-
-  const nameOf = (c) => c.lead_name || c.contact_name || formatChat(c.chat_id);
-  const [panelWide, setPanelWide] = useState(false);
-  const showPanel = panel && conv && mode !== 'wazzup' && selected !== '__wazzup__';
+  };
+  // Cada pestaña muestra cuántas conversaciones tienen mensajes sin leer
+  const sinLeer = (c) => (Number(c.unread) || 0) > 0 && !c.muted_until;
+  const tabCount = {
+    all: (conversations ?? []).filter(sinLeer).length,
+    chats: (conversations ?? []).filter((c) => c.kind !== 'group' && sinLeer(c)).length,
+    groups: (conversations ?? []).filter((c) => c.kind === 'group' && sinLeer(c)).length,
+    saved: (conversations ?? []).filter((c) => c.read_later).length,
+  };
+  const visibles = (conversations ?? []).filter((c) =>
+    tab === 'all' ? true : tab === 'groups' ? c.kind === 'group' : tab === 'saved' ? c.read_later : c.kind !== 'group'
+  );
 
   return (
-    <main className="wa-page">
-      {/* Barra superior propia: WhatsApp se usa a pantalla completa */}
+    <main className="cm-page">
       <header className="wa-topbar">
         <div className="wa-topbar-brand">
           <button type="button" className="fs-menu-btn" onClick={() => window.dispatchEvent(new CustomEvent('xiris:sidebar'))} title="Menú" aria-label="Abrir menú">
             <Icon name="menu" size={18} />
           </button>
           <span className="wa-topbar-logo">
-            <Icon name="message-circle" size={18} />
+            <Icon name="message-square" size={18} />
           </span>
-          <strong>WhatsApp</strong>
+          <strong>Comunicación interna</strong>
           <span className="wa-topbar-sep" />
-          <span className="wa-topbar-sub">Atención al cliente</span>
+          <span className="wa-topbar-sub">Equipo</span>
         </div>
         <div className="wa-page-tools">
-          <SoundToggle channel="wa" />
-          <WaModeToggle
-            mode={mode}
-            onChange={(m) => {
-              setMode(m);
-              if (selected === '__wazzup__' && m === 'app') setSelected(null);
-            }}
-          />
-          {channels.length > 1 && (
-            <select className="input" style={{ width: 220 }} value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Número">
-              <option value="">Todos mis números</option>
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.phone ? `(${c.phone})` : ''}
-                </option>
-              ))}
-            </select>
+          <SoundToggle channel="chat" />
+          {notifPerm === 'default' && (
+            <button className="btn btn-secondary" onClick={enableNotifications}>
+              <IconText name="bell" size={16}>Activar avisos</IconText>
+            </button>
           )}
-          <span className="wa-topbar-avatar" title={profile.full_name || ''} style={myPrefs?.prefs?.avatar_url ? { overflow: 'hidden', padding: 0 } : undefined}>
-            {myPrefs?.prefs?.avatar_url ? <img src={myPrefs.prefs.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(profile.full_name || user?.email || '')}
+          <span className="wa-topbar-avatar" title={profile.full_name || ''} style={avatars[me] ? { overflow: 'hidden', padding: 0 } : undefined}>
+            {avatars[me] ? <img src={avatars[me]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(profile.full_name)}
           </span>
-          <button type="button" className="wa-topbar-close" onClick={exit} title="Salir de WhatsApp" aria-label="Salir de WhatsApp">
+          <button type="button" className="wa-topbar-close" onClick={exit} title="Salir de Comunicación interna" aria-label="Salir">
             <Icon name="x" size={20} />
           </button>
         </div>
       </header>
 
-      <div className="wa-page-head">
-        <div>
-          <h1>Bandeja de atención</h1>
-          <p>Un espacio para atender a tus clientes, en equipo.</p>
-        </div>
-        <span className="wa-page-badge">
-          <strong>WhatsApp</strong> · Atención al cliente
-        </span>
-      </div>
-
-      {error && <p style={{ color: 'var(--color-danger)', margin: '0 1.5rem 8px' }}>{error}</p>}
-
-      <div className={`wa-layout${showPanel ? ' with-panel' : ''}${showPanel && panelWide ? ' panel-wide' : ''}`}>
-        {/* ---------------- Conversaciones */}
-        <section className="card wa-list">
-          <header className="wa-list-head">
-            <strong>Conversaciones</strong>
-            <span className="wa-chip-count">{FILTERS.find((f) => f.key === filter).label}</span>
-          </header>
-          <div className="wa-list-tools">
-            <label className="wa-search">
-              <Icon name="search" size={15} />
-              <input placeholder="Buscar por nombre o número…" value={q} onChange={(e) => setQ(e.target.value)} />
-            </label>
-            <div className="wa-filters">
-              {FILTERS.map((f) => (
-                <button key={f.key} type="button" className={filter === f.key ? 'on' : ''} onClick={() => setFilter(f.key)}>
-                  {f.label}
-                  {f.key !== 'all' && counts[f.key] > 0 && <span>{counts[f.key]}</span>}
+      <div className="cm-layout">
+        {/* Lista */}
+        <section className="card cm-list">
+          <div className="cm-list-top">
+            <div className="cm-list-titlebar">
+              <strong className="cm-list-title">Conversaciones</strong>
+              <CardMenu
+                items={[
+                  { label: 'Nuevo chat', onClick: () => searchRef.current?.focus() },
+                  { label: 'Crear grupo', onClick: () => setNewGroup(true) },
+                ]}
+              />
+            </div>
+            <div className="cm-search">
+              <Icon name="search" size={16} />
+              <input ref={searchRef} placeholder="Buscar compañero para escribirle…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            {q && results.length === 0 && msgHits.length === 0 && convMatches.length === 0 && <p className="cm-muted" style={{ marginTop: 6 }}>Sin resultados.</p>}
+            {(results.length > 0 || convMatches.length > 0 || msgHits.length > 0) && (
+              <div className="card cm-results cm-msg-results">
+                {results.length > 0 && <div className="cm-results-title">Personas</div>}
+                {results.map((u) => (
+                  <button key={u.id} onClick={() => startWith(u.id)} className="cm-result">
+                    <Avatar name={u.name} size={26} src={avatars[u.id]} />
+                    <span>{u.name}</span>
+                  </button>
+                ))}
+                {convMatches.length > 0 && <div className="cm-results-title">Grupos</div>}
+                {convMatches.map((c) => (
+                  <button key={c.conversation_id} className="cm-result" onClick={() => { setSearch(''); openConversation(c.conversation_id); }}>
+                    <Avatar name={nameOf(c)} size={26} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
+                    <span>{nameOf(c)}</span>
+                  </button>
+                ))}
+                {msgHits.length > 0 && <div className="cm-results-title">Mensajes</div>}
+                {msgHits.map((h) => {
+                  const c = conversations?.find((x) => x.conversation_id === h.conversation_id);
+                  return (
+                    <button
+                      key={h.message_id}
+                      className="cm-result cm-msg-hit"
+                      onClick={() => {
+                        setSearch('');
+                        if (h.conversation_id === selectedId) {
+                          jumpToMessage(h.message_id);
+                        } else {
+                          pendingJump.current = { conv: h.conversation_id, id: h.message_id };
+                          openConversation(h.conversation_id);
+                        }
+                      }}
+                    >
+                      <span className="cm-msg-hit-top">
+                        <strong>{c ? nameOf(c) : 'Chat'}</strong>
+                        <small>{fechaCorta(h.created_at)}</small>
+                      </span>
+                      <span className="cm-msg-hit-text">
+                        {(userMap[h.sender_id]?.name ?? '').split(' ')[0]}
+                        {h.sender_id ? ': ' : ''}
+                        <Highlight text={h.body} q={search.trim()} />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="cm-tabs" role="tablist">
+              {[
+                ['all', 'Todos'],
+                ['chats', 'Chats'],
+                ['groups', 'Grupos'],
+                ['saved', 'Guardados'],
+              ].map(([k, l]) => (
+                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>
+                  {l}
+                  {tabCount[k] > 0 && <span title={k === 'saved' ? 'Guardadas para leer más tarde' : 'Conversaciones con mensajes sin leer'}>{tabCount[k]}</span>}
                 </button>
               ))}
             </div>
-            {mode === 'wazzup' && canGlobal && (
-              <button className={`btn ${selected === '__wazzup__' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelected('__wazzup__')}>
-                <IconText name="inbox" size={16}>Bandeja completa de Wazzup</IconText>
-              </button>
-            )}
           </div>
-          <div className="wa-list-items">
-            {!convs ? (
-              <p className="wa-empty">Cargando…</p>
-            ) : list.length === 0 ? (
-              <p className="wa-empty">{channels.length ? 'No hay conversaciones con este filtro.' : 'No tienes números de WhatsApp asignados. Pide acceso al administrador.'}</p>
+
+          <div className="cm-items">
+            {!conversations ? (
+              <p className="cm-muted" style={{ padding: '1rem' }}>Cargando…</p>
+            ) : visibles.length === 0 ? (
+              <p className="cm-muted" style={{ padding: '1rem' }}>
+                {tab === 'saved' ? 'No tienes conversaciones guardadas para leer más tarde.' : tab === 'groups' ? 'Aún no perteneces a ningún grupo.' : 'Busca a un compañero arriba o crea un grupo para empezar.'}
+              </p>
             ) : (
-              list.map((c) => {
+              visibles.map((c) => {
+                const name = nameOf(c);
+                const active = c.conversation_id === selectedId;
                 const unread = Number(c.unread) || 0;
-                const st = statusOf(c);
+                const who = c.last_sender_id === me ? 'Tú: ' : c.kind === 'group' && c.last_sender_id ? `${(userMap[c.last_sender_id]?.name ?? '').split(' ')[0]}: ` : '';
                 return (
-                  <button key={c.id} type="button" className={`wa-item${c.id === selected ? ' on' : ''}`} onClick={() => open(c.id)}>
-                    <div className="wa-item-row">
-                      <span className={`wa-item-name${unread ? ' bold' : ''}`}>{nameOf(c)}</span>
-                      <span className="wa-item-time">{fechaCorta(c.last_message_at)}</span>
-                    </div>
-                    <div className="wa-item-row">
-                      <span className={`wa-item-preview${unread ? ' bold' : ''}`}>
-                        {c.last_direction === 'out' ? <Icon name="reply" size={12} style={{ verticalAlign: '-2px', marginRight: 4, transform: 'scaleX(-1)' }} /> : ''}
-                        {c.last_message_preview}
-                      </span>
-                      {unread > 0 && <span className="wa-unread">{unread > 99 ? '99+' : unread}</span>}
-                    </div>
-                    <div className="wa-item-row">
-                      <span className="wa-item-owner">
-                        <Icon name="user" size={12} />
-                        {c.assigned_user_id ? userMap[c.assigned_user_id]?.name ?? '' : 'Sin asignar'}
-                        {channels.length > 1 && chName(c.channel_id) ? ` · ${chName(c.channel_id)}` : ''}
-                      </span>
-                      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                        {c.read_later && (
-                          <span className="wa-status later" title="Leer más tarde">
-                            <Icon name="bookmark" size={11} />
-                          </span>
-                        )}
-                        <span className={`wa-status ${st.key}`}>{st.label}</span>
-                      </span>
+                  <button key={c.conversation_id} onClick={() => openConversation(c.conversation_id)} className={`cm-item${active ? ' active' : ''}${unread ? ' unread' : ''}`}>
+                    <Avatar name={name} size={46} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
+                    <div className="cm-item-body">
+                      <div className="cm-item-row">
+                        <span className="cm-item-name">
+                          {c.pinned_at && <Icon name="pin" size={12} style={{ color: '#c99a3d', marginRight: 4, verticalAlign: '-1px' }} title="Fijado" />}
+                          {name}
+                        </span>
+                        <span className="cm-item-time">{fechaCorta(c.last_message_at)}</span>
+                      </div>
+                      <div className="cm-item-row">
+                        <span className="cm-item-prev">
+                          {c.kind === 'notes' && !c.last_message_preview ? 'Solo tú puedes ver tus notas' : (
+                            <>
+                              {c.kind === 'notes' ? '' : who}
+                              {c.last_message_preview}
+                            </>
+                          )}
+                        </span>
+                        {c.muted_until && <Icon name="bell-off" size={13} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} title={mutedLabel(c.muted_until)} />}
+                        {c.read_later && <Icon name="bookmark" size={13} style={{ color: '#c99a3d', flexShrink: 0 }} title="Leer más tarde" />}
+                        {unread > 0 && <span className={`cm-unread${c.muted_until ? ' silenced' : ''}`}>{unread}</span>}
+                      </div>
                     </div>
                   </button>
                 );
               })
             )}
           </div>
-          <footer className="wa-list-foot">Ordenadas por actividad reciente</footer>
+          <footer className="cm-list-foot">
+            <Icon name="arrow-up-down" size={13} /> Ordenadas por actividad reciente
+          </footer>
         </section>
 
-        {/* ---------------- Conversación */}
-        <section className="card wa-center">
-          {!selected ? (
-            <div className="wa-placeholder">
-              <Icon name="messages-square" size={34} />
-              <strong>Elige una conversación</strong>
-              <span>{mode === 'wazzup' ? 'Se abrirá en la ventana de Wazzup, con todo su historial.' : 'Aquí verás los mensajes y podrás responder.'}</span>
+        {/* Hilo (se pueden soltar archivos en cualquier parte) */}
+        <FileDropZone
+          disabled={!selectedId}
+          hint="Máximo 50 MB por archivo"
+          onFiles={(files) => setDropped({ files, n: Date.now() })}
+          className="card cm-thread"
+        >
+          {!selectedId ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem', padding: '1rem', textAlign: 'center' }}>
+              Elige una conversación, busca a un compañero o crea un grupo.
             </div>
-          ) : selected === '__wazzup__' ? (
-            <WazzupFrame global />
           ) : (
             <>
-              {conv && (
-                <header className="wa-head">
-                  <div className="wa-head-main">
-                    <span className="wa-avatar">{initials(nameOf(conv))}</span>
-                    <div style={{ minWidth: 0 }}>
-                      <h2>{nameOf(conv)}</h2>
-                      <div className="wa-head-sub">
-                        Cliente · WhatsApp · {formatChat(conv.chat_id)}
-                      </div>
+              <div className="cm-thread-head">
+                {title && (
+                  <button
+                    type="button"
+                    className="cm-head-avatar"
+                    title={isGroup ? 'Ver foto del grupo' : isNotes ? undefined : 'Ver perfil'}
+                    disabled={isNotes || (isGroup && !conv?.photo_url)}
+                    onClick={() => (isGroup ? setBigPhoto({ src: conv.photo_url, title: conv.title }) : otherId && setProfileUser(otherId))}
+                  >
+                    <Avatar name={title} size={48} group={isGroup} icon={iconOf(conv)} src={conv ? photoOf(conv) : avatars[otherId]} />
+                  </button>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {!isGroup && !isNotes && otherId ? (
+                    <button type="button" className="cm-head-name" onClick={() => setProfileUser(otherId)} title="Ver perfil">
+                      {title}
+                    </button>
+                  ) : (
+                    <strong style={{ fontSize: '1rem' }}>{title}</strong>
+                  )}
+                  {!isGroup && !isNotes && <div className="cm-muted">Conversación interna</div>}
+                  {isGroup && (
+                    <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
+                      {conv.member_count} miembros{conv.system_key ? ' · grupo automático' : ''}
                     </div>
-                    <div className="wa-head-actions">
-                      <button className="btn btn-secondary" onClick={() => toggleReadLater(conv)} title={conv.read_later ? 'Quitar la marca' : 'Se marca y se cierra; la verás arriba en la lista'}>
-                        <IconText name="bookmark" size={15}>{conv.read_later ? 'Quitar de más tarde' : 'Leer más tarde'}</IconText>
-                      </button>
-                      {conv.needs_reply ? (
-                        <button className="btn btn-secondary" onClick={() => markNoReply(conv, true)} title="Marca la conversación como resuelta: no necesita respuesta (queda registrado quién lo hizo)">
-                          <IconText name="check" size={15}>Resolver</IconText>
-                        </button>
-                      ) : conv.no_reply_by ? (
-                        <button className="btn btn-secondary" onClick={() => markNoReply(conv, false)} title="Vuelve a dejarla pendiente">
-                          <IconText name="rotate-ccw" size={15}>Reabrir</IconText>
-                        </button>
-                      ) : null}
-                      {!showPanel && mode !== 'wazzup' && (
-                        <button className="wa-icon-btn" onClick={() => setPanel(true)} title="Ver ficha del cliente">
-                          <Icon name="id-card" size={17} />
-                        </button>
-                      )}
+                  )}
+                  {isNotes && (
+                    <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Icon name="lock" size={12} /> Privado: solo tú puedes ver tus notas
                     </div>
-                  </div>
-                  <div className="wa-head-row">
-                    <span className="wa-owner">
-                      <Icon name="user" size={14} />
-                      Responsable:{' '}
-                      {conv.lead_id && can('leads.assign') ? (
-                        <select value={conv.assigned_user_id || ''} onChange={(e) => assign(conv, e.target.value)} aria-label="Responsable">
-                          <option value="">Sin asignar</option>
-                          {users.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <strong>{conv.assigned_user_id ? userMap[conv.assigned_user_id]?.name ?? '' : 'Sin asignar'}</strong>
-                      )}
-                    </span>
-                    <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {conv.no_reply_by && (
-                        <span className="wa-head-sub" title={new Date(conv.no_reply_at).toLocaleString('es-CO')}>
-                          Resuelta por {userMap[conv.no_reply_by]?.name ?? 'un usuario'}
-                        </span>
-                      )}
-                      <span className={`wa-status ${statusOf(conv).key}`}>{statusOf(conv).label}</span>
-                      {conv.lead_id && (
-                        <a className="wa-link" href={`/leads/${conv.lead_id}`}>
-                          Ver lead <Icon name="arrow-right" size={13} />
-                        </a>
-                      )}
-                    </span>
-                  </div>
-                </header>
-              )}
-              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                {mode === 'wazzup' ? (
-                  <WazzupFrame conversationId={selected} />
-                ) : (
-                  <WaThread
-                    conversationId={selected}
-                    orgId={profile.organization_id}
-                    userMap={userMap}
-                    canSend={can('whatsapp.send')}
-                    leadId={conv?.lead_id ?? null}
-                    contactName={conv ? nameOf(conv) : 'Cliente'}
-                    showClientBar={false}
+                  )}
+                </div>
+                {isGroup && (
+                  <button className="cm-chip" onClick={() => setGroupInfo(true)}>
+                    Info del grupo
+                  </button>
+                )}
+                {conv && (
+                  <button
+                    className={`cm-find-btn${findOpen ? ' on' : ''}`}
+                    title="Buscar en este chat"
+                    onClick={() => {
+                      setFindOpen((v) => !v);
+                      setFindQ('');
+                      setFindHits(null);
+                    }}
+                  >
+                    <Icon name="search" size={17} />
+                  </button>
+                )}
+                {conv && (
+                  <CardMenu
+                    items={[
+                      conv.pinned_at
+                        ? { label: 'Desfijar chat', onClick: () => handlePin(conv, false) }
+                        : { label: 'Fijar chat', onClick: () => handlePin(conv, true) },
+                      conv.muted_until
+                        ? { label: 'Quitar silencio', onClick: () => handleMute(conv, null) }
+                        : { label: 'Silenciar…', onClick: () => setMuteConv(conv) },
+                      conv.read_later
+                        ? { label: 'Quitar de leer más tarde', onClick: () => handleReadLater(conv, false) }
+                        : { label: 'Marcar para leer más tarde', onClick: () => handleReadLater(conv, true) },
+                      ...(can?.('tickets.scan_chat') && !isNotes ? [{ label: 'Revisar chat completo con IA (tickets)', onClick: () => setScanConv(conv) }] : []),
+                      { label: 'Borrar chat', danger: true, onClick: () => handleClearChat(conv) },
+                    ]}
                   />
                 )}
               </div>
+
+              {findOpen && (
+                <div className="cm-find">
+                  <div className="cm-find-input">
+                    <Icon name="search" size={15} />
+                    <input autoFocus placeholder="Buscar palabras en este chat…" value={findQ} onChange={(e) => setFindQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setFindOpen(false)} />
+                    {findHits && <small>{findHits.length === 100 ? '100+' : findHits.length} resultado(s)</small>}
+                    <button className="cm-find-x" onClick={() => setFindOpen(false)} title="Cerrar">
+                      <Icon name="x" size={15} />
+                    </button>
+                  </div>
+                  {findHits && findHits.length > 0 && (
+                    <ul className="cm-find-list">
+                      {findHits.map((h) => (
+                        <li key={h.message_id}>
+                          <button onClick={() => jumpToMessage(h.message_id)}>
+                            <span className="cm-msg-hit-top">
+                              <strong>{h.sender_id === me ? 'Tú' : userMap[h.sender_id]?.name ?? 'Usuario'}</strong>
+                              <small>
+                                {fechaCorta(h.created_at) === hora(h.created_at) ? hora(h.created_at) : `${fechaCorta(h.created_at)} · ${hora(h.created_at)}`}
+                              </small>
+                            </span>
+                            <span className="cm-msg-hit-text">
+                              <Highlight text={h.body} q={findQ.trim()} />
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {findHits && findHits.length === 0 && <p className="cm-muted" style={{ margin: '6px 4px' }}>No hay mensajes con esas palabras.</p>}
+                </div>
+              )}
+
+              <div
+                style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.8rem 1.4rem', display: 'flex', flexDirection: 'column', gap: 6 }}
+                ref={listRef}
+                data-chat-scroll
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                  // Al llegar arriba se cargan solos los mensajes anteriores
+                  if (el.scrollTop < 60 && hasMore) loadOlder();
+                }}
+              >
+                {pinnedMsgs.length > 0 && (
+                  <div className="cm-pinned">
+                    <button
+                      className="cm-pinned-main"
+                      title="Ir al mensaje fijado"
+                      onClick={() => {
+                        const pm = pinnedMsgs[pinIdx % pinnedMsgs.length];
+                        jumpToMessage(pm.message_id);
+                        setPinIdx((x) => (x + 1) % pinnedMsgs.length);
+                      }}
+                    >
+                      <Icon name="pin" size={14} />
+                      <span className="cm-pinned-bars" aria-hidden="true">
+                        {pinnedMsgs.map((_, i) => (
+                          <i key={i} className={i === pinIdx % pinnedMsgs.length ? 'on' : ''} />
+                        ))}
+                      </span>
+                      <span className="cm-pinned-text">
+                        <small>
+                          Mensaje fijado{pinnedMsgs.length > 1 ? ` ${(pinIdx % pinnedMsgs.length) + 1} de ${pinnedMsgs.length}` : ''} ·{' '}
+                          {userMap[pinnedMsgs[pinIdx % pinnedMsgs.length].sender_id]?.name ?? 'Usuario'}
+                        </small>
+                        <span>
+                          {pinnedMsgs[pinIdx % pinnedMsgs.length].body ||
+                            `[${pinnedMsgs[pinIdx % pinnedMsgs.length].attachment_name || pinnedMsgs[pinIdx % pinnedMsgs.length].kind}]`}
+                        </span>
+                      </span>
+                    </button>
+                    <button className="cm-pinned-x" title="Desfijar" onClick={() => handlePinMessage({ id: pinnedMsgs[pinIdx % pinnedMsgs.length].message_id, conversation_id: selectedId }, false)}>
+                      <Icon name="x" size={14} />
+                    </button>
+                  </div>
+                )}
+                {hasMore && (
+                  <button className="btn btn-secondary" style={{ alignSelf: 'center', marginBottom: 8 }} onClick={loadOlder}>
+                    Ver mensajes anteriores
+                  </button>
+                )}
+                {messages.length === 0 && (
+                  <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '2rem' }}>Escribe el primer mensaje.</p>
+                )}
+                {messages.map((m) => {
+                  const day = diaSeparador(m.created_at);
+                  const showDay = day !== lastDay;
+                  const showSender = isGroup && (showDay || lastSender !== m.sender_id) && m.kind !== 'system';
+                  lastDay = day;
+                  lastSender = m.kind === 'system' ? null : m.sender_id;
+                  return (
+                    <div key={m.id} style={{ display: 'contents' }}>
+                      {showDay && (
+                        <div style={{ alignSelf: 'center', fontSize: '0.72rem', color: 'var(--color-text-muted)', margin: '0.5rem 0', textTransform: 'capitalize' }}>{day}</div>
+                      )}
+                      <MessageBubble
+                        m={m}
+                        me={me}
+                        userMap={userMap}
+                        avatars={avatars}
+                        onOpenProfile={setProfileUser}
+                        showSender={showSender}
+                        replyTo={m.reply_to_id ? byId[m.reply_to_id] : null}
+                        reactions={reactions[m.id]}
+                        editing={editId === m.id}
+                        onReply={setReplyTo}
+                        onReact={handleReact}
+                        onStartEdit={(msg) => setEditId(msg.id)}
+                        onCancelEdit={() => setEditId(null)}
+                        onSaveEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onSaveSticker={handleSaveSticker}
+                        onForward={setForwardMsg}
+                        stickerSaved={savedStickers.has(m.attachment_path)}
+                        isGroup={isGroup}
+                        readInfo={
+                          m.sender_id === me && m.kind !== 'system'
+                            ? {
+                                recipients: members
+                                  .filter((x) => x.user_id !== me && new Date(x.joined_at) <= new Date(m.created_at))
+                                  .map((x) => x.user_id),
+                                reads: reads[m.id] ?? [],
+                              }
+                            : null
+                        }
+                        onJumpTo={jumpToMessage}
+                        pinned={pinnedMsgs.some((p) => p.message_id === m.id)}
+                        onPin={isNotes ? undefined : handlePinMessage}
+                        onOpenImage={(m) => setLightbox(m.id)}
+                      />
+                    </div>
+                  );
+                })}
+                <div ref={endRef} />
+              </div>
+
+              {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', padding: '0 1rem' }}>{error}</p>}
+              <Composer
+                orgId={orgId}
+                userId={me}
+                userMap={userMap}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
+                onSend={handleSend}
+                droppedFiles={dropped}
+                help={`Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos durante ${EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.`}
+              />
             </>
           )}
-        </section>
-
-        {/* ---------------- Ficha del cliente */}
-        {showPanel && <WaClientPanel conv={conv} wide={panelWide} onToggleWide={() => setPanelWide((v) => !v)} onClose={() => setPanel(false)} />}
+        </FileDropZone>
       </div>
+
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', color: '#fff', padding: '8px 16px', borderRadius: 999, fontSize: '0.85rem', zIndex: 60 }}>
+          {toast}
+        </div>
+      )}
+
+      <CreateGroupDialog
+        open={newGroup}
+        onClose={() => setNewGroup(false)}
+        users={users}
+        me={me}
+        onCreated={async (id) => {
+          setNewGroup(false);
+          trackEvent('chat.group_created', { entityType: 'chat_conversations', entityId: id });
+          await loadConversations();
+          openConversation(id);
+        }}
+      />
+      <GroupInfoDialog
+        open={groupInfo}
+        onClose={() => setGroupInfo(false)}
+        conversation={conv}
+        users={users}
+        userMap={userMap}
+        me={me}
+        onChanged={loadConversations}
+        onLeft={() => {
+          setGroupInfo(false);
+          setSelectedId(null);
+          setMessages([]);
+          window.__chatOpenConversation = null;
+          loadConversations();
+        }}
+      />
+      <ForwardDialog
+        message={forwardMsg}
+        onClose={() => setForwardMsg(null)}
+        conversations={conversations}
+        users={users}
+        userMap={userMap}
+        me={me}
+        orgId={orgId}
+        onDone={(n) => {
+          playSent('chat');
+          trackEvent('chat.forward', { entityType: 'chat_messages', entityId: forwardMsg?.id, metadata: { targets: n } });
+          setForwardMsg(null);
+          setToast(n > 1 ? `Reenviado a ${n} chats` : 'Reenviado');
+          setTimeout(() => setToast(null), 2500);
+          loadConversations();
+        }}
+      />
+      {muteConv && <MuteDialog conv={muteConv} onClose={() => setMuteConv(null)} onPick={(until) => handleMute(muteConv, until)} />}
+      {scanConv && <ScanChatDialog conversationId={scanConv.conversation_id} onClose={() => setScanConv(null)} />}
+      <ProfileCard
+        userId={profileUser}
+        fallbackName={userMap[profileUser]?.name}
+        onClose={() => setProfileUser(null)}
+        onMessage={
+          profileUser && profileUser !== me
+            ? (id) => {
+                setProfileUser(null);
+                startWith(id);
+              }
+            : null
+        }
+      />
+      {bigPhoto && <PhotoViewer src={bigPhoto.src} title={bigPhoto.title} onClose={() => setBigPhoto(null)} />}
+      {lightbox && (
+        <ImageViewer
+          items={messages
+            .filter((x) => x.kind === 'image' && x.attachment_path && !x.deleted_at)
+            .map((x) => ({
+              id: x.id,
+              src: x.attachment_path,
+              title: x.sender_id === me ? 'Tú' : userMap[x.sender_id]?.name ?? 'Usuario',
+              subtitle: `${new Date(x.created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} · ${hora(x.created_at)}`,
+              caption: x.body,
+            }))}
+          startId={lightbox}
+          useUrl={useSignedUrl}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </main>
   );
+}
+
+// Resalta las palabras buscadas dentro de un texto
+function Highlight({ text, q }) {
+  const t = String(text || '');
+  const needle = String(q || '').trim();
+  if (needle.length < 2) return t;
+  const parts = [];
+  const lower = t.toLowerCase();
+  const n = needle.toLowerCase();
+  let i = 0;
+  let k = lower.indexOf(n);
+  // Muestra el texto alrededor de la primera coincidencia
+  let startAt = 0;
+  if (k > 60) {
+    startAt = k - 40;
+    parts.push('…');
+  }
+  i = startAt;
+  while (k !== -1 && parts.length < 40) {
+    if (k > i) parts.push(t.slice(i, k));
+    parts.push(<mark key={k}>{t.slice(k, k + n.length)}</mark>);
+    i = k + n.length;
+    k = lower.indexOf(n, i);
+  }
+  parts.push(t.slice(i));
+  return <>{parts}</>;
 }

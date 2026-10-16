@@ -698,26 +698,19 @@ export default function ComunicacionApp() {
         </div>
       </header>
 
-      <div className="cm-head">
-        <div>
-          <h1>Comunicación interna</h1>
-          <p>Un espacio para conversar, compartir y trabajar en equipo.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={() => setNewGroup(true)}>
-            <IconText name="users" size={16}>Nuevo grupo</IconText>
-          </button>
-          <button className="btn cm-btn-gold" onClick={() => searchRef.current?.focus()}>
-            <IconText name="plus" size={16}>Nuevo chat</IconText>
-          </button>
-        </div>
-      </div>
-
       <div className="cm-layout">
         {/* Lista */}
         <section className="card cm-list">
           <div className="cm-list-top">
-            <strong className="cm-list-title">Conversaciones</strong>
+            <div className="cm-list-titlebar">
+              <strong className="cm-list-title">Conversaciones</strong>
+              <CardMenu
+                items={[
+                  { label: 'Nuevo chat', onClick: () => searchRef.current?.focus() },
+                  { label: 'Crear grupo', onClick: () => setNewGroup(true) },
+                ]}
+              />
+            </div>
             <div className="cm-search">
               <Icon name="search" size={16} />
               <input ref={searchRef} placeholder="Buscar compañero para escribirle…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -800,7 +793,7 @@ export default function ComunicacionApp() {
                 const who = c.last_sender_id === me ? 'Tú: ' : c.kind === 'group' && c.last_sender_id ? `${(userMap[c.last_sender_id]?.name ?? '').split(' ')[0]}: ` : '';
                 return (
                   <button key={c.conversation_id} onClick={() => openConversation(c.conversation_id)} className={`cm-item${active ? ' active' : ''}${unread ? ' unread' : ''}`}>
-                    <Avatar name={name} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
+                    <Avatar name={name} size={46} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
                     <div className="cm-item-body">
                       <div className="cm-item-row">
                         <span className="cm-item-name">
@@ -855,7 +848,7 @@ export default function ComunicacionApp() {
                     disabled={isNotes || (isGroup && !conv?.photo_url)}
                     onClick={() => (isGroup ? setBigPhoto({ src: conv.photo_url, title: conv.title }) : otherId && setProfileUser(otherId))}
                   >
-                    <Avatar name={title} size={40} group={isGroup} icon={iconOf(conv)} src={conv ? photoOf(conv) : avatars[otherId]} />
+                    <Avatar name={title} size={48} group={isGroup} icon={iconOf(conv)} src={conv ? photoOf(conv) : avatars[otherId]} />
                   </button>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1053,16 +1046,18 @@ export default function ComunicacionApp() {
               </div>
 
               {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', padding: '0 1rem' }}>{error}</p>}
-              <Composer orgId={orgId} userId={me} userMap={userMap} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={handleSend} droppedFiles={dropped} />
+              <Composer
+                orgId={orgId}
+                userId={me}
+                userMap={userMap}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
+                onSend={handleSend}
+                droppedFiles={dropped}
+                help={`Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos durante ${EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.`}
+              />
             </>
           )}
-          <footer className="cm-thread-foot">
-            <Icon name="info" size={13} />
-            <span>
-              Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y
-              editarlos durante {EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.
-            </span>
-          </footer>
         </FileDropZone>
       </div>
 

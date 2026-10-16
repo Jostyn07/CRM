@@ -163,12 +163,14 @@ export default function MessageBubble({
 
       <div
         style={{
-          padding: sticker ? 0 : media && !m.body && !replyTo ? 4 : '0.5rem 0.75rem',
-          borderRadius: 12,
-          borderBottomRightRadius: mine && !sticker ? 4 : 12,
-          borderBottomLeftRadius: !mine && !sticker ? 4 : 12,
-          background: sticker ? 'transparent' : mine ? 'var(--color-primary)' : 'var(--color-active-bg)',
-          color: mine && !sticker ? '#fff' : 'var(--color-text)',
+          padding: sticker ? 0 : media && !m.body && !replyTo ? 4 : '0.65rem 0.95rem',
+          borderRadius: 14,
+          borderBottomRightRadius: mine && !sticker ? 4 : 14,
+          borderBottomLeftRadius: !mine && !sticker ? 4 : 14,
+          // Colores por tema (ver --bubble-* en globals.css)
+          background: sticker ? 'transparent' : mine ? 'var(--bubble-mine-bg, var(--color-primary))' : 'var(--bubble-other-bg, var(--color-active-bg))',
+          border: sticker ? 'none' : mine ? 'var(--bubble-mine-border, none)' : 'var(--bubble-other-border, none)',
+          color: mine && !sticker ? 'var(--bubble-mine-fg, #fff)' : 'var(--color-text)',
           fontSize: '0.88rem',
           position: 'relative',
         }}
