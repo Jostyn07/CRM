@@ -81,6 +81,15 @@ export default function ComunicacionApp() {
   const convsRef = useRef([]);
   convsRef.current = conversations || [];
   const [messages, setMessages] = useState([]);
+  // Último estado conocido de cada chat abierto: al volver a él se pinta al
+  // instante mientras se traen los mensajes nuevos
+  const msgCache = useRef(new Map());
+  const messagesRef = useRef([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+    const open = typeof window !== 'undefined' ? window.__chatOpenConversation : null;
+    if (open && messages.length) msgCache.current.set(open, messages);
+  }, [messages]);
   const [extraRefs, setExtraRefs] = useState({}); // mensajes citados que no están cargados
   const [reactions, setReactions] = useState({}); // id → [{user_id, emoji}]
   const [reads, setReads] = useState({}); // id → [{user_id, read_at}]
@@ -207,6 +216,9 @@ export default function ComunicacionApp() {
       router.replace(url.pathname + url.search, { scroll: false });
       try {
         const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
+        const cached = msgCache.current.get(id);
+        messagesRef.current = cached ?? [];
+        setMessages(cached ?? []);
         const msgs = await getMessages(id, { after: clearedAt || undefined });
         // Si mientras cargaba se abrió otro chat, esta respuesta se descarta
         if (window.__chatOpenConversation !== id) return;
@@ -217,8 +229,7 @@ export default function ComunicacionApp() {
         loadMembers(id);
         getPinned(id).then((p) => window.__chatOpenConversation === id && (setPinnedMsgs(p), setPinIdx(0))).catch(() => setPinnedMsgs([]));
         ensureRefs(msgs);
-        await markRead(id);
-        loadConversations();
+        markRead(id).then(loadConversations, () => {});
         trackEvent('chat.open', { entityType: 'chat_conversations', entityId: id });
       } catch (e) {
         setError(e.message);
@@ -236,11 +247,60 @@ export default function ComunicacionApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Tiempo real: mensajes y reacciones
+  // Funciones que usa el tiempo real, siempre en su versión más reciente
+  // (así la suscripción no se rehace en cada render y no se pierden mensajes)
+  const rt = useRef({});
+  rt.current = { loadConversations, loadReactions, loadMembers, ensureRefs };
+
+  // Trae lo nuevo del chat abierto (respaldo si el tiempo real se cae)
+  const catchUp = useCallback(async () => {
+    const id = window.__chatOpenConversation;
+    if (!id) return;
+    const prev = messagesRef.current;
+    const last = prev.length ? prev[prev.length - 1].created_at : null;
+    if (!last) return;
+    try {
+      const nuevos = await getMessages(id, { after: last, limit: 50 });
+      if (window.__chatOpenConversation !== id || !nuevos.length) return;
+      setMessages((cur) => {
+        const ids = new Set(cur.map((x) => x.id));
+        const add = nuevos.filter((n) => !ids.has(n.id));
+        return add.length ? [...cur, ...add] : cur;
+      });
+      rt.current.ensureRefs(nuevos);
+      if (nuevos.some((n) => n.sender_id !== me) && document.visibilityState === 'visible') await markRead(id);
+      rt.current.loadConversations();
+    } catch {
+      /* se reintenta en el siguiente ciclo */
+    }
+  }, [me]);
+
+  // Respaldo: cada 3 s con la pestaña visible; al volver a la pestaña, de inmediato
   useEffect(() => {
     if (!me) return undefined;
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') catchUp();
+    }, 3000);
+    const onFocus = () => catchUp();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [me, catchUp]);
+
+  // Tiempo real: mensajes y reacciones
+  const [rtRetry, setRtRetry] = useState(0);
+  useEffect(() => {
+    if (!me) return undefined;
+    const loadConversations = () => rt.current.loadConversations();
+    const loadReactions = (ids) => rt.current.loadReactions(ids);
+    const loadMembers = (id) => rt.current.loadMembers(id);
+    const ensureRefs = (msgs) => rt.current.ensureRefs(msgs);
+    let retryTimer = null;
+    let alive = true;
     const channel = supabase
-      .channel(`chat-page-${me}`)
+      .channel(`chat-page-${me}-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, async (payload) => {
         const m = payload.new;
         const cleared = convsRef.current.find((x) => x.conversation_id === m?.conversation_id)?.cleared_at;
@@ -278,13 +338,23 @@ export default function ComunicacionApp() {
         const id = payload.new?.message_id ?? payload.old?.message_id;
         if (id) loadReactions([id]);
       })
-      .subscribe();
+      .subscribe((status) => {
+        // Si la conexión se cae, se trae lo pendiente y se vuelve a suscribir
+        if (!alive) return;
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(() => setRtRetry((n) => n + 1), 2000);
+        }
+        if (status === 'SUBSCRIBED') catchUp();
+      });
     const timer = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => {
+      alive = false;
+      clearTimeout(retryTimer);
       supabase.removeChannel(channel);
       clearInterval(timer);
     };
-  }, [me, loadConversations, loadReactions, loadMembers, ensureRefs]);
+  }, [me, rtRetry, catchUp]);
 
   useEffect(() => {
     const onVisible = () => {
