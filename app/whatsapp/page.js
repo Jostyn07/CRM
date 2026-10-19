@@ -60,7 +60,9 @@ function Inbox() {
   const { user, profile, can, scopeOf } = useSession();
   const myPrefs = useMyPrefs(profile?.organization_id ? user?.id : null);
   const [mode, setMode] = useWaMode();
-  const canGlobal = scopeOf('whatsapp.view') === 'organization';
+  // Bandeja completa de Wazzup: para todo el que tenga WhatsApp y algún número
+  // habilitado (qué números ve ahí lo configura Wazzup por usuario)
+  const canGlobal = !!scopeOf('whatsapp.view');
   const { users, userMap } = useOrgUsers();
   const router = useRouter();
   const params = useSearchParams();
@@ -249,7 +251,7 @@ function Inbox() {
                 </button>
               ))}
             </div>
-            {mode === 'wazzup' && canGlobal && (
+            {mode === 'wazzup' && canGlobal && channels.length > 0 && (
               <button className={`btn ${selected === '__wazzup__' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelected('__wazzup__')}>
                 <IconText name="inbox" size={16}>Bandeja completa de Wazzup</IconText>
               </button>
