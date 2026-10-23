@@ -2961,3 +2961,9 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
   .wa-page { height: auto; overflow: visible; }
   .wa-layout { flex: none; }
 }
+
+/* Archivados (Comunicación) */
+.cm-archived-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; margin-bottom: 4px; border: none; border-radius: 12px; background: transparent; color: var(--color-text); font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; text-align: left; }
+.cm-archived-row:hover { background: var(--color-active-bg); }
+.cm-archived-row span { margin-left: auto; font-size: 0.74rem; font-weight: 700; color: var(--color-text-muted); }
+.cm-archived-bar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 18px 22px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.88rem; }

@@ -24,6 +24,9 @@ import {
   getPinned,
   pinMessage,
   setMuted,
+  deleteGroup,
+  setArchived,
+  setGroupArchived,
   searchMessages,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
@@ -104,6 +107,7 @@ export default function ComunicacionApp() {
   const pendingJump = useRef(null);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('all');
+  const [showArchived, setShowArchived] = useState(false);
   const searchRef = useRef(null);
   const [error, setError] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -275,12 +279,14 @@ export default function ComunicacionApp() {
     }
   }, [me]);
 
-  // Respaldo: cada 3 s con la pestaña visible; al volver a la pestaña, de inmediato
+  // Respaldo: solo si el tiempo real está caído (cada 8 s con la pestaña
+  // visible); al volver a la pestaña, de inmediato
+  const rtOk = useRef(false);
   useEffect(() => {
     if (!me) return undefined;
     const t = setInterval(() => {
-      if (document.visibilityState === 'visible') catchUp();
-    }, 3000);
+      if (!rtOk.current && document.visibilityState === 'visible') catchUp();
+    }, 8000);
     const onFocus = () => catchUp();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -341,6 +347,7 @@ export default function ComunicacionApp() {
       .subscribe((status) => {
         // Si la conexión se cae, se trae lo pendiente y se vuelve a suscribir
         if (!alive) return;
+        rtOk.current = status === 'SUBSCRIBED';
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           clearTimeout(retryTimer);
           retryTimer = setTimeout(() => setRtRetry((n) => n + 1), 2000);
@@ -350,6 +357,7 @@ export default function ComunicacionApp() {
     const timer = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => {
       alive = false;
+      rtOk.current = false;
       clearTimeout(retryTimer);
       supabase.removeChannel(channel);
       clearInterval(timer);
@@ -564,6 +572,33 @@ export default function ComunicacionApp() {
     }
   }
 
+  async function handleArchive(c, on, forAll) {
+    try {
+      if (forAll) await setGroupArchived(c.conversation_id, on);
+      else await setArchived(c.conversation_id, on);
+      if (on && !forAll && c.conversation_id === selectedId) closeConversation();
+      setToast(on ? (forAll ? 'Grupo archivado para todos' : 'Archivado') : forAll ? 'Grupo reactivado' : 'Desarchivado');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handleDeleteGroup(c) {
+    if (!window.confirm(`¿Eliminar el grupo "${c.title}"? Se borra para todos los miembros, con todos sus mensajes y archivos. No se puede deshacer.`)) return;
+    try {
+      await deleteGroup(c.conversation_id);
+      if (c.conversation_id === selectedId) closeConversation();
+      msgCache.current.delete(c.conversation_id);
+      setToast('Grupo eliminado');
+      setTimeout(() => setToast(null), 2500);
+      loadConversations();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function handleClearChat(c) {
     if (!window.confirm('¿Borrar este chat? Se borra solo para ti; los demás lo seguirán viendo.')) return;
     try {
@@ -580,6 +615,23 @@ export default function ComunicacionApp() {
       setError(e.message);
     }
   }
+
+  // Si el grupo abierto fue eliminado por un administrador, se cierra
+  const openWasGroup = useRef(false);
+  useEffect(() => {
+    if (!conversations || !selectedId) return;
+    const c = conversations.find((x) => x.conversation_id === selectedId);
+    if (c) {
+      openWasGroup.current = c.kind === 'group';
+    } else if (openWasGroup.current) {
+      openWasGroup.current = false;
+      msgCache.current.delete(selectedId);
+      closeConversation();
+      setToast('Este grupo fue eliminado');
+      setTimeout(() => setToast(null), 3000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations, selectedId]);
 
   function closeConversation() {
     setSelectedId(null);
@@ -727,7 +779,8 @@ export default function ComunicacionApp() {
     router.push(back);
   };
   // Cada pestaña muestra cuántas conversaciones tienen mensajes sin leer
-  const sinLeer = (c) => (Number(c.unread) || 0) > 0 && !c.muted_until;
+  const sinLeer = (c) => (Number(c.unread) || 0) > 0 && !c.muted_until && !c.archived;
+  const archivados = (conversations ?? []).filter((c) => c.archived);
   const tabCount = {
     all: (conversations ?? []).filter(sinLeer).length,
     chats: (conversations ?? []).filter((c) => c.kind !== 'group' && sinLeer(c)).length,
@@ -735,7 +788,7 @@ export default function ComunicacionApp() {
     saved: (conversations ?? []).filter((c) => c.read_later).length,
   };
   const visibles = (conversations ?? []).filter((c) =>
-    tab === 'all' ? true : tab === 'groups' ? c.kind === 'group' : tab === 'saved' ? c.read_later : c.kind !== 'group'
+    showArchived ? c.archived : c.archived ? false : tab === 'all' ? true : tab === 'groups' ? c.kind === 'group' : tab === 'saved' ? c.read_later : c.kind !== 'group'
   );
 
   return (
@@ -849,11 +902,24 @@ export default function ComunicacionApp() {
           </div>
 
           <div className="cm-items">
+            {showArchived ? (
+              <button type="button" className="cm-archived-row" onClick={() => setShowArchived(false)}>
+                <Icon name="arrow-left" size={16} /> Archivados
+                <span>{archivados.length}</span>
+              </button>
+            ) : (
+              archivados.length > 0 && (
+                <button type="button" className="cm-archived-row" onClick={() => setShowArchived(true)}>
+                  <Icon name="archive" size={16} /> Archivados
+                  <span>{archivados.length}</span>
+                </button>
+              )
+            )}
             {!conversations ? (
               <p className="cm-muted" style={{ padding: '1rem' }}>Cargando…</p>
             ) : visibles.length === 0 ? (
               <p className="cm-muted" style={{ padding: '1rem' }}>
-                {tab === 'saved' ? 'No tienes conversaciones guardadas para leer más tarde.' : tab === 'groups' ? 'Aún no perteneces a ningún grupo.' : 'Busca a un compañero arriba o crea un grupo para empezar.'}
+                {showArchived ? 'No tienes conversaciones archivadas.' : tab === 'saved' ? 'No tienes conversaciones guardadas para leer más tarde.' : tab === 'groups' ? 'Aún no perteneces a ningún grupo.' : 'Busca a un compañero arriba o crea un grupo para empezar.'}
               </p>
             ) : (
               visibles.map((c) => {
@@ -972,6 +1038,21 @@ export default function ComunicacionApp() {
                         ? { label: 'Quitar de leer más tarde', onClick: () => handleReadLater(conv, false) }
                         : { label: 'Marcar para leer más tarde', onClick: () => handleReadLater(conv, true) },
                       ...(can?.('tickets.scan_chat') && !isNotes ? [{ label: 'Revisar chat completo con IA (tickets)', onClick: () => setScanConv(conv) }] : []),
+                      ...(!conv.group_archived_at && !isNotes
+                        ? [
+                            conv.archived
+                              ? { label: 'Desarchivar', onClick: () => handleArchive(conv, false, false) }
+                              : { label: isGroup ? 'Archivar para mí' : 'Archivar chat', onClick: () => handleArchive(conv, true, false) },
+                          ]
+                        : []),
+                      ...(conv.kind === 'group' && !conv.system_key && conv.my_role === 'admin'
+                        ? [
+                            conv.group_archived_at
+                              ? { label: 'Reactivar grupo', onClick: () => handleArchive(conv, false, true) }
+                              : { label: 'Archivar grupo para todos', onClick: () => handleArchive(conv, true, true) },
+                            { label: 'Eliminar grupo', danger: true, onClick: () => handleDeleteGroup(conv) },
+                          ]
+                        : []),
                       { label: 'Borrar chat', danger: true, onClick: () => handleClearChat(conv) },
                     ]}
                   />
@@ -1116,16 +1197,28 @@ export default function ComunicacionApp() {
               </div>
 
               {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', padding: '0 1rem' }}>{error}</p>}
-              <Composer
-                orgId={orgId}
-                userId={me}
-                userMap={userMap}
-                replyTo={replyTo}
-                onCancelReply={() => setReplyTo(null)}
-                onSend={handleSend}
-                droppedFiles={dropped}
-                help={`Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos durante ${EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.`}
-              />
+              {conv?.group_archived_at ? (
+                <div className="cm-archived-bar">
+                  <Icon name="archive" size={16} />
+                  <span>Grupo archivado</span>
+                  {conv.my_role === 'admin' && !conv.system_key && (
+                    <button type="button" className="btn btn-secondary" onClick={() => handleArchive(conv, false, true)}>
+                      Reactivar grupo
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <Composer
+                  orgId={orgId}
+                  userId={me}
+                  userMap={userMap}
+                  replyTo={replyTo}
+                  onCancelReply={() => setReplyTo(null)}
+                  onSend={handleSend}
+                  droppedFiles={dropped}
+                  help={`Formato: *negrita*, _cursiva_, ++subrayado++, ~tachado~. Puedes arrastrar o pegar archivos (máx. 50 MB). Puedes eliminar tus mensajes (los demás verán "Mensaje eliminado") y editarlos durante ${EDIT_MINUTES} minutos. Los administradores pueden revisar las conversaciones.`}
+                />
+              )}
             </>
           )}
         </FileDropZone>
