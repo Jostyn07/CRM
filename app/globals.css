@@ -2967,3 +2967,17 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 .cm-archived-row:hover { background: var(--color-active-bg); }
 .cm-archived-row span { margin-left: auto; font-size: 0.74rem; font-weight: 700; color: var(--color-text-muted); }
 .cm-archived-bar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 18px 22px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.88rem; }
+/* Que nada se salga del recuadro: lista de chats e indicadores */
+.cm-list, .cm-items { overflow-x: hidden; }
+.cm-item { min-width: 0; max-width: 100%; }
+.cm-item-body { grid-template-columns: minmax(0, 1fr); }
+.cm-item-body > *, .cm-item-row, .cm-item-name, .cm-item-prev { min-width: 0; }
+.cm-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-item-time { flex-shrink: 0; }
+.wa-list-items { overflow-x: hidden; }
+.wa-item-body { grid-template-columns: minmax(0, 1fr); }
+.wa-item-body > *, .wa-item-row { min-width: 0; }
+.kpi-card { overflow: hidden; }
+.kpi-value { flex-shrink: 0; }
+.kpi-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-spark { display: block; flex: 0 1 56px; min-width: 0; width: 56px; height: 26px; margin-bottom: 4px; overflow: hidden; }
