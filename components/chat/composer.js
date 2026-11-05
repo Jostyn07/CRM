@@ -91,8 +91,13 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      // Voz en Opus a 32 kbps: suena bien y pesa ~4 veces menos que antes
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
       chunksRef.current = [];
       recorder.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
       recorder.start();
@@ -110,9 +115,10 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
     r.recorder.onstop = async () => {
       r.stream.getTracks().forEach((t) => t.stop());
       if (!send || duration < 800) return;
-      const blob = new Blob(chunksRef.current, { type: r.mime });
-      const ext = r.mime.includes('webm') ? 'webm' : 'm4a';
-      const file = new File([blob], `nota-de-voz-${Date.now()}.${ext}`, { type: r.mime });
+      const type = r.mime.split(';')[0];
+      const blob = new Blob(chunksRef.current, { type });
+      const ext = type.includes('webm') ? 'webm' : 'm4a';
+      const file = new File([blob], `nota-de-voz-${Date.now()}.${ext}`, { type });
       setSending(true);
       try {
         await onSend({ text: '', files: [file], replyTo, durationMs: duration });

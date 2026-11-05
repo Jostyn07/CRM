@@ -2981,3 +2981,10 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 .kpi-value { flex-shrink: 0; }
 .kpi-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-spark { display: block; flex: 0 1 56px; min-width: 0; width: 56px; height: 26px; margin-bottom: 4px; overflow: hidden; }
+/* Notas de voz (Comunicación) */
+.voice-note { display: flex; align-items: center; gap: 10px; width: 260px; max-width: 100%; padding: 2px 0; }
+.voice-btn { width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; border: none; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--color-primary-contrast, #171411); cursor: pointer; }
+.voice-btn:disabled { opacity: .5; cursor: default; }
+.voice-bar { flex: 1; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 18%, transparent); cursor: pointer; position: relative; overflow: hidden; }
+.voice-bar span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: inherit; }
+.voice-time { font-size: 0.74rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }

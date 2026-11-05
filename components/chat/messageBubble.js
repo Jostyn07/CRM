@@ -10,7 +10,77 @@ import { QUICK_REACTIONS, renderFormatted } from '../../lib/chat/format';
 import EmojiPicker from './emojiPicker';
 import Icon, { IconText } from '../ui/icon';
 
+// Nota de voz: muestra la duración guardada y solo descarga el audio al
+// darle reproducir (antes cada audio del chat se descargaba al abrirlo)
+function fmtDur(ms) {
+  const t = Math.max(0, Math.round((ms || 0) / 1000));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
+function VoiceNote({ m }) {
+  const url = useSignedUrl(m.attachment_path);
+  const ref = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [pos, setPos] = useState(0);
+  const total = m.duration_ms || 0;
+  const durOf = (a) => (Number.isFinite(a?.duration) && a.duration > 0 ? a.duration * 1000 : total);
+
+  function toggle() {
+    const a = ref.current;
+    if (!a || !url) return;
+    if (a.paused) {
+      setLoading(a.readyState < 2);
+      a.play().catch(() => setLoading(false));
+    } else a.pause();
+  }
+  function seek(e) {
+    const a = ref.current;
+    const d = durOf(a);
+    if (!a || !d) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    a.currentTime = (frac * d) / 1000;
+    setPos(frac * d);
+  }
+  const d = durOf(ref.current);
+  const pct = d ? Math.min(100, (pos / d) * 100) : 0;
+  return (
+    <div className="voice-note">
+      <button type="button" className="voice-btn" onClick={toggle} disabled={!url} aria-label={playing ? 'Pausar' : 'Reproducir'}>
+        <Icon name={playing ? 'pause' : 'play'} size={16} style={loading ? { opacity: 0.45 } : undefined} />
+      </button>
+      <div className="voice-bar" onClick={seek} role="slider" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} tabIndex={0}>
+        <span style={{ width: `${pct}%` }} />
+      </div>
+      <span className="voice-time">{fmtDur(playing || pos ? pos : total)}</span>
+      {url && (
+        <audio
+          ref={ref}
+          src={url}
+          preload="none"
+          onPlaying={() => {
+            setPlaying(true);
+            setLoading(false);
+          }}
+          onPause={() => setPlaying(false)}
+          onEnded={() => {
+            setPlaying(false);
+            setPos(0);
+          }}
+          onTimeUpdate={(e) => setPos(e.currentTarget.currentTime * 1000)}
+        />
+      )}
+    </div>
+  );
+}
+
 function Attachment({ m, mine, onOpenImage }) {
+  if (m.kind === 'audio') return <VoiceNote m={m} />;
+  return <FileAttachment m={m} mine={mine} onOpenImage={onOpenImage} />;
+}
+
+function FileAttachment({ m, mine, onOpenImage }) {
   const url = useSignedUrl(m.attachment_path);
   if (!url) return <div style={{ width: 200, height: 120, borderRadius: 8, background: 'rgba(0,0,0,0.08)' }} />;
 

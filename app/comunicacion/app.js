@@ -22,6 +22,9 @@ import {
   EDIT_MINUTES, MSG_COLS, diaSeparador, hora, useSignedUrl, editMessage, fechaCorta, getMessages, getReactions, getReads, groupMembers, kindFromMime,
   clearChat, deleteMessage, listConversations, listStickers, markRead, openDirect, openNotes, setPinned, setReadLater, saveAsSticker, sendMessage, toggleReaction, uploadChatFile,
   getPinned,
+  subscribeChat,
+  chatRealtimeVerified,
+  prefetchSignedUrls,
   pinMessage,
   setMuted,
   deleteGroup,
@@ -224,6 +227,7 @@ export default function ComunicacionApp() {
         messagesRef.current = cached ?? [];
         setMessages(cached ?? []);
         const msgs = await getMessages(id, { after: clearedAt || undefined });
+        prefetchSignedUrls(msgs.map((x) => x.attachment_path));
         // Si mientras cargaba se abrió otro chat, esta respuesta se descarta
         if (window.__chatOpenConversation !== id) return;
         setMessages(msgs);
@@ -265,6 +269,7 @@ export default function ComunicacionApp() {
     if (!last) return;
     try {
       const nuevos = await getMessages(id, { after: last, limit: 50 });
+      prefetchSignedUrls(nuevos.map((x) => x.attachment_path));
       if (window.__chatOpenConversation !== id || !nuevos.length) return;
       setMessages((cur) => {
         const ids = new Set(cur.map((x) => x.id));
@@ -285,7 +290,7 @@ export default function ComunicacionApp() {
   useEffect(() => {
     if (!me) return undefined;
     const t = setInterval(() => {
-      if (!rtOk.current && document.visibilityState === 'visible') catchUp();
+      if (!chatRealtimeVerified() && document.visibilityState === 'visible') catchUp();
     }, 8000);
     const onFocus = () => catchUp();
     window.addEventListener('focus', onFocus);
@@ -299,16 +304,27 @@ export default function ComunicacionApp() {
   const [rtRetry, setRtRetry] = useState(0);
   useEffect(() => {
     if (!me) return undefined;
-    const loadConversations = () => rt.current.loadConversations();
+    // La lista se recarga una sola vez aunque lleguen varios mensajes seguidos
+    let listTimer = null;
+    const loadConversations = () => {
+      clearTimeout(listTimer);
+      listTimer = setTimeout(() => alive && rt.current.loadConversations(), 400);
+    };
     const loadReactions = (ids) => rt.current.loadReactions(ids);
     const loadMembers = (id) => rt.current.loadMembers(id);
     const ensureRefs = (msgs) => rt.current.ensureRefs(msgs);
     let retryTimer = null;
     let alive = true;
-    const channel = supabase
-      .channel(`chat-page-${me}-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, async (payload) => {
-        const m = payload.new;
+    // Mensajes: canal privado del usuario (llegan al instante)
+    const unsubscribe = subscribeChat(me, {
+      onStatus: (status) => {
+        if (!alive) return;
+        rtOk.current = status === 'SUBSCRIBED';
+        if (status === 'SUBSCRIBED') catchUp();
+      },
+      onMessage: async (type, m) => {
+        if (!alive) return;
+        const payload = { eventType: type };
         const cleared = convsRef.current.find((x) => x.conversation_id === m?.conversation_id)?.cleared_at;
         if (m?.conversation_id && m.conversation_id === window.__chatOpenConversation && !(cleared && m.created_at <= cleared)) {
           setMessages((prev) => {
@@ -325,7 +341,11 @@ export default function ComunicacionApp() {
           }
         }
         loadConversations();
-      })
+      },
+    });
+    // Reacciones, leídos y fijados: canal aparte (si falla, no frena los mensajes)
+    const channel = supabase
+      .channel(`chat-extra-${me}-${Date.now()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reads' }, (payload) => {
         const r = payload.new;
         if (!r || r.conversation_id !== window.__chatOpenConversation) return;
@@ -345,20 +365,19 @@ export default function ComunicacionApp() {
         if (id) loadReactions([id]);
       })
       .subscribe((status) => {
-        // Si la conexión se cae, se trae lo pendiente y se vuelve a suscribir
         if (!alive) return;
-        rtOk.current = status === 'SUBSCRIBED';
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           clearTimeout(retryTimer);
-          retryTimer = setTimeout(() => setRtRetry((n) => n + 1), 2000);
+          retryTimer = setTimeout(() => setRtRetry((n) => n + 1), 15000);
         }
-        if (status === 'SUBSCRIBED') catchUp();
       });
     const timer = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => {
       alive = false;
       rtOk.current = false;
       clearTimeout(retryTimer);
+      clearTimeout(listTimer);
+      unsubscribe();
       supabase.removeChannel(channel);
       clearInterval(timer);
     };
@@ -455,6 +474,7 @@ export default function ComunicacionApp() {
       const clearedAt = convsRef.current.find((x) => x.conversation_id === selectedId)?.cleared_at;
       const id = selectedId;
       const older = await getMessages(id, { before: messages[0].created_at, after: clearedAt || undefined });
+      prefetchSignedUrls(older.map((x) => x.attachment_path));
       if (window.__chatOpenConversation !== id) return;
       setHasMore(older.hasMore);
       setMessages((prev) => [...older.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
