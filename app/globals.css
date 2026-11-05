@@ -2988,3 +2988,6 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 .voice-bar { flex: 1; height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 18%, transparent); cursor: pointer; position: relative; overflow: hidden; }
 .voice-bar span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: inherit; }
 .voice-time { font-size: 0.74rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+.voice-dl { width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--color-text-muted); }
+.voice-dl:hover { color: var(--color-text); background: var(--color-active-bg); }
+.voice-note { width: 290px; }

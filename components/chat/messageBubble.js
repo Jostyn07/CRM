@@ -55,6 +55,16 @@ function VoiceNote({ m }) {
       </div>
       <span className="voice-time">{fmtDur(playing || pos ? pos : total)}</span>
       {url && (
+        <a
+          className="voice-dl"
+          href={`${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(m.attachment_name || 'nota-de-voz.webm')}`}
+          title="Descargar audio"
+          aria-label="Descargar audio"
+        >
+          <Icon name="download" size={15} />
+        </a>
+      )}
+      {url && (
         <audio
           ref={ref}
           src={url}
