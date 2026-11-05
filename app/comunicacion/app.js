@@ -289,8 +289,13 @@ export default function ComunicacionApp() {
   const rtOk = useRef(false);
   useEffect(() => {
     if (!me) return undefined;
+    // Sin canal confirmado: cada 8 s. Con canal: igual se revisa cada 30 s
+    // por si algún mensaje no llegó (consulta muy liviana)
+    let n = 0;
     const t = setInterval(() => {
-      if (!chatRealtimeVerified() && document.visibilityState === 'visible') catchUp();
+      n += 1;
+      if (document.visibilityState !== 'visible') return;
+      if (!chatRealtimeVerified() || n % 4 === 0) catchUp();
     }, 8000);
     const onFocus = () => catchUp();
     window.addEventListener('focus', onFocus);
