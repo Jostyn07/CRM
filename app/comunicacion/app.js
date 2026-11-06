@@ -295,7 +295,10 @@ export default function ComunicacionApp() {
     const t = setInterval(() => {
       n += 1;
       if (document.visibilityState !== 'visible') return;
-      if (!chatRealtimeVerified() || n % 4 === 0) catchUp();
+      const ok = chatRealtimeVerified();
+      if (!ok || n % 4 === 0) catchUp();
+      // Sin canal, la lista de conversaciones también se pone al día (cada 16 s)
+      if (!ok && n % 2 === 0) rt.current.loadConversations?.();
     }, 8000);
     const onFocus = () => catchUp();
     window.addEventListener('focus', onFocus);
@@ -373,7 +376,7 @@ export default function ComunicacionApp() {
         if (!alive) return;
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           clearTimeout(retryTimer);
-          retryTimer = setTimeout(() => setRtRetry((n) => n + 1), 15000);
+          retryTimer = setTimeout(() => setRtRetry((n) => n + 1), Math.min(300000, 30000 * (rtRetry + 1)));
         }
       });
     const timer = setInterval(() => setTick((t) => t + 1), 30_000);
