@@ -351,23 +351,9 @@ export default function ComunicacionApp() {
         loadConversations();
       },
     });
-    // Reacciones, leídos y fijados: canal aparte (si falla, no frena los mensajes)
+    // Reacciones: canal aparte (si falla, no frena los mensajes)
     const channel = supabase
       .channel(`chat-extra-${me}-${Date.now()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reads' }, (payload) => {
-        const r = payload.new;
-        if (!r || r.conversation_id !== window.__chatOpenConversation) return;
-        setReads((prev) => {
-          if (!(r.message_id in prev)) return prev; // no es un mensaje mío cargado
-          if (prev[r.message_id].some((x) => x.user_id === r.user_id)) return prev;
-          return { ...prev, [r.message_id]: [...prev[r.message_id], r] };
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_pinned_messages' }, (payload) => {
-        const cid = payload.new?.conversation_id ?? payload.old?.conversation_id;
-        const open = window.__chatOpenConversation;
-        if (open && (!cid || cid === open)) getPinned(open).then((p) => window.__chatOpenConversation === open && setPinnedMsgs(p)).catch(() => {});
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reactions' }, (payload) => {
         const id = payload.new?.message_id ?? payload.old?.message_id;
         if (id) loadReactions([id]);
@@ -390,6 +376,34 @@ export default function ComunicacionApp() {
       clearInterval(timer);
     };
   }, [me, rtRetry, catchUp]);
+
+  // Leídos (✓✓) y fijados: solo del chat abierto. Antes cada "leído" de
+  // cualquier chat le llegaba a todos los miembros conectados y consumía la
+  // mayor parte de la cuota de tiempo real.
+  useEffect(() => {
+    if (!me || !selectedId) return undefined;
+    const filter = `conversation_id=eq.${selectedId}`;
+    const ch = supabase
+      .channel(`chat-open-${selectedId}-${Date.now()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_message_reads', filter }, (payload) => {
+        const r = payload.new;
+        if (!r || r.conversation_id !== window.__chatOpenConversation) return;
+        setReads((prev) => {
+          if (!(r.message_id in prev)) return prev; // no es un mensaje mío cargado
+          if (prev[r.message_id].some((x) => x.user_id === r.user_id)) return prev;
+          return { ...prev, [r.message_id]: [...prev[r.message_id], r] };
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_pinned_messages', filter }, (payload) => {
+        const cid = payload.new?.conversation_id ?? payload.old?.conversation_id;
+        const open = window.__chatOpenConversation;
+        if (open && (!cid || cid === open)) getPinned(open).then((p) => window.__chatOpenConversation === open && setPinnedMsgs(p)).catch(() => {});
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [me, selectedId]);
 
   useEffect(() => {
     const onVisible = () => {

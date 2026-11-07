@@ -97,8 +97,9 @@ function Inbox() {
     };
     const ch = supabase
       .channel(`wa-inbox-${user?.id}`)
+      // Cada mensaje nuevo ya actualiza su conversación: basta con escuchar esa
+      // tabla (antes también se escuchaban los mensajes y llegaba doble)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wa_conversations' }, later)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wa_messages' }, later)
       .subscribe();
     const onRead = () => load();
     window.addEventListener('wa:read', onRead);
