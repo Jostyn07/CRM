@@ -202,6 +202,25 @@ export default function ComunicacionApp() {
     if (data?.length) setExtraRefs((prev) => ({ ...prev, ...Object.fromEntries(data.map((m) => [m.id, m])) }));
   }, []);
 
+  // Precarga: al pasar el mouse por un chat se traen sus mensajes, así al
+  // hacer clic se ven al instante
+  const prefetching = useRef(new Map());
+  const prefetchConversation = useCallback((id) => {
+    if (!id || id === window.__chatOpenConversation) return;
+    const last = prefetching.current.get(id) ?? 0;
+    if (msgCache.current.has(id) && Date.now() - last < 60_000) return;
+    if (Date.now() - last < 15_000) return;
+    prefetching.current.set(id, Date.now());
+    const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
+    getMessages(id, { after: clearedAt || undefined })
+      .then((msgs) => {
+        if (window.__chatOpenConversation === id) return;
+        msgCache.current.set(id, msgs);
+        prefetchSignedUrls(msgs.map((x) => x.attachment_path));
+      })
+      .catch(() => prefetching.current.delete(id));
+  }, []);
+
   const openConversation = useCallback(
     async (id) => {
       setSelectedId(id);
@@ -220,7 +239,7 @@ export default function ComunicacionApp() {
       window.__chatOpenConversation = id;
       const url = new URL(window.location.href);
       url.searchParams.set('c', id);
-      router.replace(url.pathname + url.search, { scroll: false });
+      window.history.replaceState(window.history.state, '', url.pathname + url.search);
       try {
         const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
         const cached = msgCache.current.get(id);
@@ -719,7 +738,7 @@ export default function ComunicacionApp() {
     window.__chatOpenConversation = null;
     const url = new URL(window.location.href);
     url.searchParams.delete('c');
-    router.replace(url.pathname + url.search, { scroll: false });
+    window.history.replaceState(window.history.state, '', url.pathname + url.search);
   }
 
   async function handleReact(m, emoji, has) {
@@ -1008,7 +1027,13 @@ export default function ComunicacionApp() {
                 const unread = Number(c.unread) || 0;
                 const who = c.last_sender_id === me ? 'Tú: ' : c.kind === 'group' && c.last_sender_id ? `${(userMap[c.last_sender_id]?.name ?? '').split(' ')[0]}: ` : '';
                 return (
-                  <button key={c.conversation_id} onClick={() => openConversation(c.conversation_id)} className={`cm-item${active ? ' active' : ''}${unread ? ' unread' : ''}`}>
+                  <button
+                    key={c.conversation_id}
+                    onClick={() => openConversation(c.conversation_id)}
+                    onMouseEnter={() => prefetchConversation(c.conversation_id)}
+                    onFocus={() => prefetchConversation(c.conversation_id)}
+                    onTouchStart={() => prefetchConversation(c.conversation_id)}
+                    className={`cm-item${active ? ' active' : ''}${unread ? ' unread' : ''}`}>
                     <Avatar name={name} size={46} group={c.kind === 'group'} icon={iconOf(c)} src={photoOf(c)} />
                     <div className="cm-item-body">
                       <div className="cm-item-row">
