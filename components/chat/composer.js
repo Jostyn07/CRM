@@ -73,8 +73,21 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
     if (sending || disabled) return;
     const body = text.trim();
     if (!body && !files.length) return;
-    setSending(true);
     setError(null);
+    // Solo texto: se limpia la caja al instante (el mensaje ya se ve en el chat)
+    if (!files.length) {
+      const reply = replyTo;
+      setText('');
+      onCancelReply?.();
+      try {
+        await onSend({ text: body, files: [], replyTo: reply });
+      } catch (e) {
+        setText(body);
+        setError(e.message);
+      }
+      return;
+    }
+    setSending(true);
     try {
       await onSend({ text: body, files: files.map((f) => f.file), replyTo });
       setText('');

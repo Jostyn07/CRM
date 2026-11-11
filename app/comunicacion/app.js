@@ -296,10 +296,11 @@ export default function ComunicacionApp() {
       n += 1;
       if (document.visibilityState !== 'visible') return;
       const ok = chatRealtimeVerified();
-      if (!ok || n % 4 === 0) catchUp();
-      // Sin canal, la lista de conversaciones también se pone al día (cada 16 s)
-      if (!ok && n % 2 === 0) rt.current.loadConversations?.();
-    }, 8000);
+      // Sin tiempo real: el chat abierto se revisa cada 4 s (consulta mínima)
+      if (!ok || n % 8 === 0) catchUp();
+      // y la lista de conversaciones cada 16 s
+      if (!ok && n % 4 === 0) rt.current.loadConversations?.();
+    }, 4000);
     const onFocus = () => catchUp();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -519,8 +520,44 @@ export default function ComunicacionApp() {
     if (m?.conversation_id && m.conversation_id !== window.__chatOpenConversation) return;
     stickToBottom.current = true;
     setReads((prev) => (m.id in prev ? prev : { ...prev, [m.id]: [] }));
-    setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
+    // Si ya estaba (provisional), se reemplaza por la versión del servidor
+    setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? { ...m } : x)) : [...prev, m]));
   };
+
+  // Texto: aparece al instante en pantalla y se confirma por detrás
+  function newId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+  async function sendTextFast(conv, text, replyId, retryOf) {
+    const id = retryOf ?? newId();
+    const temp = {
+      id,
+      conversation_id: conv,
+      sender_id: me,
+      kind: 'text',
+      body: text,
+      reply_to_id: replyId,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
+    if (retryOf) setMessages((prev) => prev.map((x) => (x.id === id ? temp : x)));
+    else addLocal(temp);
+    playSent('chat');
+    try {
+      const saved = await sendMessage(conv, { id, body: text, reply_to_id: replyId });
+      addLocal(saved);
+      loadConversations();
+    } catch (e) {
+      setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, _pending: false, _failed: e.message || 'No se envió' } : x)));
+    }
+  }
+  function retrySend(m) {
+    sendTextFast(m.conversation_id, m.body, m.reply_to_id ?? null, m.id);
+  }
 
   // Envío: texto, archivos (el comentario va con el primero) o sticker
   async function handleSend({ text, files = [], replyTo: reply, sticker, durationMs }) {
@@ -548,7 +585,8 @@ export default function ComunicacionApp() {
       }
       trackEvent('chat.files_sent', { entityType: 'chat_conversations', entityId: conv, metadata: { count: files.length } });
     } else if (text) {
-      addLocal(await sendMessage(conv, { body: text, reply_to_id: replyId }));
+      sendTextFast(conv, text, replyId);
+      return;
     }
     playSent('chat');
     loadConversations();
@@ -1200,6 +1238,7 @@ export default function ComunicacionApp() {
                       <MessageBubble
                         m={m}
                         me={me}
+                        onRetry={retrySend}
                         userMap={userMap}
                         avatars={avatars}
                         onOpenProfile={setProfileUser}

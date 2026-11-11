@@ -2990,4 +2990,4 @@ html[data-bg='noche'][data-theme='dark'] body { background: linear-gradient(160d
 .voice-time { font-size: 0.74rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
 .voice-dl { width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--color-text-muted); }
 .voice-dl:hover { color: var(--color-text); background: var(--color-active-bg); }
-.voice-note { width: 290px; }
+.voice-note { width: 290px; }.msg-retry { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; padding: 0; font: inherit; font-size: 0.72rem; font-weight: 600; color: var(--color-danger); cursor: pointer; }

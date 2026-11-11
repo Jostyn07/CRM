@@ -173,6 +173,7 @@ export default function MessageBubble({
   onOpenImage,
   pinned,
   onPin,
+  onRetry,
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -345,7 +346,15 @@ export default function MessageBubble({
         >
           {m.edited_at && !deleted && <span>editado</span>}
           <span>{hora(m.created_at)}</span>
-          {readInfo && <ReadTicks info={readInfo} userMap={userMap} isGroup={isGroup} mine={mine} sticker={sticker} />}
+          {m._pending ? (
+            <Icon name="clock" size={13} aria-label="Enviando" />
+          ) : m._failed ? (
+            <button type="button" className="msg-retry" onClick={() => onRetry?.(m)} title={m._failed}>
+              <Icon name="refresh-cw" size={13} /> No se envió · Reintentar
+            </button>
+          ) : (
+            readInfo && <ReadTicks info={readInfo} userMap={userMap} isGroup={isGroup} mine={mine} sticker={sticker} />
+          )}
         </div>
       </div>
 
