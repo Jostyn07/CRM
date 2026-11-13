@@ -5,7 +5,7 @@
 // acciones (responder, reaccionar, editar, guardar sticker).
 
 import { useEffect, useRef, useState } from 'react';
-import { EDIT_MINUTES, canDeleteMessage, canEditMessage, fileSize, hora, previewOf, useSignedUrl } from '../../lib/chat/api';
+import { EDIT_MINUTES, canDeleteMessage, canEditMessage, downloadChatFile, fileSize, hora, previewOf, useSignedUrl } from '../../lib/chat/api';
 import { QUICK_REACTIONS, renderFormatted } from '../../lib/chat/format';
 import EmojiPicker from './emojiPicker';
 import Icon, { IconText } from '../ui/icon';
@@ -55,14 +55,15 @@ function VoiceNote({ m }) {
       </div>
       <span className="voice-time">{fmtDur(playing || pos ? pos : total)}</span>
       {url && (
-        <a
+        <button
+          type="button"
           className="voice-dl"
-          href={`${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(m.attachment_name || 'nota-de-voz.webm')}`}
           title="Descargar audio"
           aria-label="Descargar audio"
+          onClick={() => downloadChatFile(m.attachment_path, m.attachment_name || 'nota-de-voz.webm').catch(() => {})}
         >
           <Icon name="download" size={15} />
-        </a>
+        </button>
       )}
       {url && (
         <audio
@@ -174,6 +175,7 @@ export default function MessageBubble({
   pinned,
   onPin,
   onRetry,
+  onDiscard,
 }) {
   const [hover, setHover] = useState(false);
   const [picker, setPicker] = useState(false);
@@ -287,6 +289,13 @@ export default function MessageBubble({
         )}
 
         {m.attachment_path && <Attachment m={m} mine={mine} onOpenImage={onOpenImage} />}
+        {!m.attachment_path && m.attachment_name && (m._pending || m._failed) && (
+          <div className="msg-uploading">
+            <Icon name={m.kind === 'audio' ? 'mic' : m.kind === 'image' ? 'image' : 'paperclip'} size={16} />
+            <span>{m.kind === 'audio' ? 'Nota de voz' : m.attachment_name}</span>
+            {m.attachment_size ? <small>{(m.attachment_size / 1048576).toFixed(1)} MB</small> : null}
+          </div>
+        )}
 
         {deleted ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontStyle: 'italic', opacity: 0.8 }}>
@@ -352,7 +361,13 @@ export default function MessageBubble({
             <button type="button" className="msg-retry" onClick={() => onRetry?.(m)} title={m._failed}>
               <Icon name="refresh-cw" size={13} /> No se envió · Reintentar
             </button>
-          ) : (
+          ) : null}
+          {m._failed && !m._pending && (
+            <button type="button" className="msg-retry msg-discard" onClick={() => onDiscard?.(m)} title="Quitar" aria-label="Quitar">
+              <Icon name="x" size={13} />
+            </button>
+          )}
+          {m._pending || m._failed ? null : (
             readInfo && <ReadTicks info={readInfo} userMap={userMap} isGroup={isGroup} mine={mine} sticker={sticker} />
           )}
         </div>

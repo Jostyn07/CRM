@@ -21,12 +21,11 @@ const FORMATS = [
   { label: '</>', title: 'Código (`texto`)', marker: '`', style: { fontFamily: 'monospace', fontSize: '0.75rem' } },
 ];
 
-export default function Composer({ orgId, userId, userMap, replyTo, onCancelReply, onSend, disabled, droppedFiles, help }) {
+export default function Composer({ orgId, userId, userMap, replyTo, onCancelReply, onSend, disabled, droppedFiles, help, conversationId }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]); // [{file, url}]
   const [showEmoji, setShowEmoji] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [recording, setRecording] = useState(null); // {recorder, start}
   const [recSeconds, setRecSeconds] = useState(0);
@@ -70,33 +69,22 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
   }
 
   async function submit() {
-    if (sending || disabled) return;
+    if (disabled) return;
     const body = text.trim();
     if (!body && !files.length) return;
     setError(null);
-    // Solo texto: se limpia la caja al instante (el mensaje ya se ve en el chat)
-    if (!files.length) {
-      const reply = replyTo;
-      setText('');
-      onCancelReply?.();
-      try {
-        await onSend({ text: body, files: [], replyTo: reply });
-      } catch (e) {
-        setText(body);
-        setError(e.message);
-      }
-      return;
-    }
-    setSending(true);
+    // El chat de destino se fija en este momento; la cola se encarga del resto
+    const conv = conversationId;
+    const reply = replyTo;
+    const toSend = files.map((f) => f.file);
+    setText('');
+    setFiles([]);
+    onCancelReply?.();
     try {
-      await onSend({ text: body, files: files.map((f) => f.file), replyTo });
-      setText('');
-      setFiles([]);
-      onCancelReply?.();
+      await onSend({ text: body, files: toSend, replyTo: reply, conversationId: conv });
     } catch (e) {
+      setText(body);
       setError(e.message);
-    } finally {
-      setSending(false);
     }
   }
 
@@ -125,6 +113,9 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
     const r = recording;
     if (!r) return;
     const duration = Date.now() - r.start;
+    // El chat de destino se fija al dar Enviar, no cuando termina de procesarse
+    const conv = conversationId;
+    const reply = replyTo;
     r.recorder.onstop = async () => {
       r.stream.getTracks().forEach((t) => t.stop());
       if (!send || duration < 800) return;
@@ -132,16 +123,13 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
       const blob = new Blob(chunksRef.current, { type });
       const ext = type.includes('webm') ? 'webm' : 'm4a';
       const file = new File([blob], `nota-de-voz-${Date.now()}.${ext}`, { type });
-      setSending(true);
       try {
-        await onSend({ text: '', files: [file], replyTo, durationMs: duration });
-        onCancelReply?.();
+        await onSend({ text: '', files: [file], replyTo: reply, durationMs: duration, conversationId: conv });
       } catch (e) {
         setError(e.message);
-      } finally {
-        setSending(false);
       }
     };
+    onCancelReply?.();
     r.recorder.stop();
     setRecording(null);
   }
@@ -256,7 +244,7 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
                 onSend={async (s) => {
                   setShowStickers(false);
                   try {
-                    await onSend({ sticker: s, replyTo });
+                    await onSend({ sticker: s, replyTo, conversationId });
                     onCancelReply?.();
                   } catch (e) {
                     setError(e.message);
@@ -302,11 +290,11 @@ export default function Composer({ orgId, userId, userMap, replyTo, onCancelRepl
             style={{ flex: 1 }}
           />
           {text.trim() || files.length ? (
-            <button type="button" className="cmp-send" title="Enviar (Enter)" aria-label="Enviar" disabled={sending || disabled} onClick={submit}>
-              <Icon name="send" size={20} style={sending ? { opacity: 0.5 } : undefined} />
+            <button type="button" className="cmp-send" title="Enviar (Enter)" aria-label="Enviar" disabled={disabled} onClick={submit}>
+              <Icon name="send" size={20} />
             </button>
           ) : (
-            <button type="button" className="cmp-send cmp-mic" title="Grabar nota de voz" aria-label="Grabar nota de voz" disabled={sending || disabled} onClick={startRecording}>
+            <button type="button" className="cmp-send cmp-mic" title="Grabar nota de voz" aria-label="Grabar nota de voz" disabled={disabled} onClick={startRecording}>
               <Icon name="mic" size={20} />
             </button>
           )}

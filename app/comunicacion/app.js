@@ -36,6 +36,7 @@ import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
 import CardMenu from '../../components/ui/cardMenu';
 import ScanChatDialog from '../../components/tickets/scanChatDialog';
+import { enqueue, onOutbox, outboxFor, retry as retryOutbox, discard as discardOutbox, outboxBusy } from '../../lib/chat/outbox';
 import MuteDialog, { mutedLabel } from '../../components/chat/muteDialog';
 import FileDropZone from '../../components/ui/fileDropZone';
 import ImageViewer from '../../components/chat/imageViewer';
@@ -243,13 +244,16 @@ export default function ComunicacionApp() {
       try {
         const clearedAt = convsRef.current.find((x) => x.conversation_id === id)?.cleared_at;
         const cached = msgCache.current.get(id);
-        messagesRef.current = cached ?? [];
-        setMessages(cached ?? []);
+        const base = (cached ?? []).filter((x) => !x._pending && !x._failed);
+        const conCola = [...base, ...outboxFor(id).filter((t) => !base.some((x) => x.id === t.id))];
+        messagesRef.current = conCola;
+        setMessages(conCola);
         const msgs = await getMessages(id, { after: clearedAt || undefined });
         prefetchSignedUrls(msgs.map((x) => x.attachment_path));
         // Si mientras cargaba se abrió otro chat, esta respuesta se descarta
         if (window.__chatOpenConversation !== id) return;
-        setMessages(msgs);
+        const enCurso = outboxFor(id).filter((t) => !msgs.some((x) => x.id === t.id));
+        setMessages(enCurso.length ? [...msgs, ...enCurso] : msgs);
         setHasMore(msgs.hasMore);
         loadReactions(msgs.map((m) => m.id));
         loadReads(msgs);
@@ -543,73 +547,64 @@ export default function ComunicacionApp() {
     setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? { ...m } : x)) : [...prev, m]));
   };
 
-  // Texto: aparece al instante en pantalla y se confirma por detrás
-  function newId() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-    });
-  }
-  async function sendTextFast(conv, text, replyId, retryOf) {
-    const id = retryOf ?? newId();
-    const temp = {
-      id,
-      conversation_id: conv,
-      sender_id: me,
-      kind: 'text',
-      body: text,
-      reply_to_id: replyId,
-      created_at: new Date().toISOString(),
-      _pending: true,
-    };
-    if (retryOf) setMessages((prev) => prev.map((x) => (x.id === id ? temp : x)));
-    else addLocal(temp);
-    playSent('chat');
-    try {
-      const saved = await sendMessage(conv, { id, body: text, reply_to_id: replyId });
-      addLocal(saved);
-      loadConversations();
-    } catch (e) {
-      setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, _pending: false, _failed: e.message || 'No se envió' } : x)));
-    }
-  }
-  function retrySend(m) {
-    sendTextFast(m.conversation_id, m.body, m.reply_to_id ?? null, m.id);
-  }
-
-  // Envío: texto, archivos (el comentario va con el primero) o sticker
-  async function handleSend({ text, files = [], replyTo: reply, sticker, durationMs }) {
-    const conv = selectedId;
+  // Envíos: todo pasa por la cola (lib/chat/outbox). Cada mensaje queda
+  // atado al chat donde se dio "Enviar", aunque luego se cambie de chat.
+  function handleSend({ text, files = [], replyTo: reply, sticker, durationMs, conversationId }) {
+    const conv = conversationId ?? selectedId;
+    if (!conv) return;
     const replyId = reply?.id ?? null;
+    let items = [];
     if (sticker) {
-      addLocal(await sendMessage(conv, { kind: 'sticker', attachment_path: sticker.path, attachment_mime: sticker.mime, reply_to_id: replyId }));
+      items = [{ kind: 'sticker', attachment_path: sticker.path, attachment_mime: sticker.mime, reply_to_id: replyId }];
       trackEvent('chat.sticker_sent', { entityType: 'chat_conversations', entityId: conv });
     } else if (files.length) {
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        const path = await uploadChatFile(orgId, conv, f);
-        addLocal(
-          await sendMessage(conv, {
-            kind: kindFromMime(f.type),
-            body: i === 0 && text ? text : null,
-            attachment_path: path,
-            attachment_name: f.name,
-            attachment_mime: f.type || 'application/octet-stream',
-            attachment_size: f.size,
-            duration_ms: durationMs ?? null,
-            reply_to_id: i === 0 ? replyId : null,
-          })
-        );
-      }
+      items = files.map((f, i) => ({ file: f, body: i === 0 && text ? text : null, duration_ms: durationMs ?? null, reply_to_id: i === 0 ? replyId : null }));
       trackEvent('chat.files_sent', { entityType: 'chat_conversations', entityId: conv, metadata: { count: files.length } });
     } else if (text) {
-      sendTextFast(conv, text, replyId);
-      return;
+      items = [{ body: text, reply_to_id: replyId }];
     }
+    if (!items.length) return;
+    enqueue({ orgId, conversationId: conv, senderId: me, items });
     playSent('chat');
-    loadConversations();
   }
+
+  function retrySend(m) {
+    retryOutbox(m.id);
+  }
+
+  function discardSend(m) {
+    discardOutbox(m.id);
+  }
+
+  // Si hay envíos sin terminar, el navegador avisa antes de cerrar la pestaña
+  useEffect(() => {
+    const onBefore = (e) => {
+      if (!outboxBusy()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBefore);
+    return () => window.removeEventListener('beforeunload', onBefore);
+  }, []);
+
+  // Lo que pasa en la cola se refleja en el chat que corresponda
+  useEffect(() => {
+    return onOutbox(({ type, job, saved }) => {
+      if (type === 'queued') addLocal(job.temp);
+      else if (type === 'failed') setMessages((prev) => prev.map((x) => (x.id === job.id ? job.temp : x)));
+      else if (type === 'discarded') setMessages((prev) => prev.filter((x) => x.id !== job.id));
+      else if (type === 'sent') {
+        addLocal(saved);
+        // El chat de destino puede no estar abierto: se actualiza su copia guardada
+        const cached = msgCache.current.get(job.conv);
+        if (cached && job.conv !== window.__chatOpenConversation) {
+          msgCache.current.set(job.conv, cached.map((x) => (x.id === saved.id ? saved : x)));
+        }
+        loadConversations();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadConversations]);
 
   async function handleEdit(id, text) {
     const body = text.trim();
@@ -1264,6 +1259,7 @@ export default function ComunicacionApp() {
                         m={m}
                         me={me}
                         onRetry={retrySend}
+                        onDiscard={discardSend}
                         userMap={userMap}
                         avatars={avatars}
                         onOpenProfile={setProfileUser}
@@ -1315,6 +1311,7 @@ export default function ComunicacionApp() {
                 </div>
               ) : (
                 <Composer
+                  conversationId={selectedId}
                   orgId={orgId}
                   userId={me}
                   userMap={userMap}
