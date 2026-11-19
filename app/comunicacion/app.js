@@ -31,6 +31,7 @@ import {
   setArchived,
   setGroupArchived,
   searchMessages,
+  chatRealtimeMissed,
 } from '../../lib/chat/api';
 import { playSent } from '../../lib/sounds';
 import SoundToggle from '../../components/ui/soundToggle';
@@ -195,10 +196,12 @@ export default function ComunicacionApp() {
   }, []);
 
   // Citas de mensajes antiguos que no están en la página cargada
+  const refsAsked = useRef(new Set());
   const ensureRefs = useCallback(async (msgs) => {
     const loaded = new Set(msgs.map((m) => m.id));
-    const missing = [...new Set(msgs.map((m) => m.reply_to_id).filter((id) => id && !loaded.has(id)))];
+    const missing = [...new Set(msgs.map((m) => m.reply_to_id).filter((id) => id && !loaded.has(id) && !refsAsked.current.has(id)))];
     if (!missing.length) return;
+    missing.forEach((id) => refsAsked.current.add(id));
     const { data } = await supabase.from('chat_messages').select(MSG_COLS).in('id', missing);
     if (data?.length) setExtraRefs((prev) => ({ ...prev, ...Object.fromEntries(data.map((m) => [m.id, m])) }));
   }, []);
@@ -294,6 +297,8 @@ export default function ComunicacionApp() {
       const nuevos = await getMessages(id, { after: last, limit: 50 });
       prefetchSignedUrls(nuevos.map((x) => x.attachment_path));
       if (window.__chatOpenConversation !== id || !nuevos.length) return;
+      const have = new Set(messagesRef.current.map((x) => x.id));
+      if (nuevos.some((n) => !have.has(n.id) && n.sender_id !== me) && chatRealtimeVerified()) chatRealtimeMissed();
       setMessages((cur) => {
         const ids = new Set(cur.map((x) => x.id));
         const add = nuevos.filter((n) => !ids.has(n.id));
@@ -319,10 +324,10 @@ export default function ComunicacionApp() {
       n += 1;
       if (document.visibilityState !== 'visible') return;
       const ok = chatRealtimeVerified();
-      // Sin tiempo real: el chat abierto se revisa cada 4 s (consulta mínima)
-      if (!ok || n % 8 === 0) catchUp();
-      // y la lista de conversaciones cada 16 s
-      if (!ok && n % 4 === 0) rt.current.loadConversations?.();
+      // Sin tiempo real: el chat abierto cada 8 s y la lista cada 24 s.
+      // Con tiempo real: una revisión liviana por minuto
+      if (!ok ? n % 2 === 0 : n % 15 === 0) catchUp();
+      if (!ok && n % 6 === 0) rt.current.loadConversations?.();
     }, 4000);
     const onFocus = () => catchUp();
     window.addEventListener('focus', onFocus);
@@ -340,7 +345,7 @@ export default function ComunicacionApp() {
     let listTimer = null;
     const loadConversations = () => {
       clearTimeout(listTimer);
-      listTimer = setTimeout(() => alive && rt.current.loadConversations(), 400);
+      listTimer = setTimeout(() => alive && rt.current.loadConversations(), 1500);
     };
     const loadReactions = (ids) => rt.current.loadReactions(ids);
     const loadMembers = (id) => rt.current.loadMembers(id);
@@ -380,7 +385,8 @@ export default function ComunicacionApp() {
       .channel(`chat-extra-${me}-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_reactions' }, (payload) => {
         const id = payload.new?.message_id ?? payload.old?.message_id;
-        if (id) loadReactions([id]);
+        // Solo si ese mensaje está en pantalla (las demás llegan al abrir el chat)
+        if (id && messagesRef.current.some((x) => x.id === id)) loadReactions([id]);
       })
       .subscribe((status) => {
         if (!alive) return;

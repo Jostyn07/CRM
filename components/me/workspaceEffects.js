@@ -38,6 +38,8 @@ export default function WorkspaceEffects() {
     safe(access.logAccess);
     safe(access.mfaNeedsCode).then((need) => vivo && need === true && router.replace('/login?mfa=1'));
     const t = setInterval(async () => {
+      // Pestaña oculta: no pregunta (al volver se revisa en el siguiente ciclo)
+      if (document.visibilityState !== 'visible') return;
       safe(access.logAccess);
       if ((await safe(access.sessionAlive)) === false && vivo) {
         try {
@@ -45,7 +47,7 @@ export default function WorkspaceEffects() {
         } catch {}
         window.location.href = '/login?expired=1';
       }
-    }, 60000);
+    }, 120000);
     return () => {
       vivo = false;
       clearInterval(t);
